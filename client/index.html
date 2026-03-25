@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Angry Sheep — marker view</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="bar">
+        <h1>ArUco markers</h1>
+        <p id="status" class="status">Disconnected</p>
+      </header>
+      <canvas id="view" width="960" height="540"></canvas>
+      <p class="hint">
+        Run <code>python server/server.py</code> with the venv active, then refresh. WebSocket:
+        <code>ws://localhost:8765</code>
+      </p>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
