@@ -68,7 +68,7 @@ async def send_data():
 async def main():
     host = "127.0.0.1"
     port = 8765
-    print(f"ArUco server: WebSocket ws://{host}:{port} — open client in browser (npm run client).")
+    print(f"ArUco server: WebSocket ws://{host}:{port} — connect a WebSocket client to receive marker JSON.")
     async with websockets.serve(handler, host, port):
         await send_data()
 

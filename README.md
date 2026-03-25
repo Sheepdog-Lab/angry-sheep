@@ -1,15 +1,14 @@
 # angry-sheep
 
-Tabletop museum experience: browser client + Python OpenCV WebSocket server for ArUco marker tracking.
+Tabletop museum experience: Python OpenCV WebSocket server for ArUco marker tracking.
 
 ## Repo layout
 
 | Path | Purpose |
 |------|--------|
-| `client/` | HTML / CSS / JS (canvas + WebSocket client) |
 | `server/` | `server.py`, `requirements.txt` (OpenCV + websockets) |
 | `markers/` | Optional printed ArUco assets (see `markers/README.md`) |
-| *(repo root)* | Docs, `package.json`, `README.md`, design notes |
+| *(repo root)* | Docs, `README.md`, design notes |
 
 ## Python server
 
@@ -21,20 +20,10 @@ pip install -r server/requirements.txt
 python server/server.py
 ```
 
-Uses the default camera and serves WebSockets on **ws://localhost:8765**.
+Uses the default camera and serves WebSockets on **ws://127.0.0.1:8765**.
 
-## Browser client
-
-In another terminal (repo root), install JS tooling once, then serve the client:
-
-```bash
-npm install
-npm run client
-```
-
-Open the URL it prints (e.g. **http://localhost:3000**). Ensure the Python server is running and the camera is allowed in system privacy settings.
+Messages are JSON objects: `{"width": <int>, "height": <int>, "markers": [{"id": <int>, "x": <int>, "y": <int>}, ...]}` (pixel coordinates in the camera frame).
 
 ## Team notes
 
-- Keep **client** and **server** changes in separate commits when possible.
-- Do not commit `venv/` or `node_modules/` (see `.gitignore`).
+- Do not commit `venv/` (see `.gitignore`).
