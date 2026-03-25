@@ -1,5 +1,6 @@
 (function () {
-  const WS_URL = "ws://localhost:8765";
+  var host = window.location.hostname || "localhost";
+  var WS_URL = "ws://" + host + ":8765";
   const canvas = document.getElementById("view");
   const ctx = canvas.getContext("2d");
   const statusEl = document.getElementById("status");

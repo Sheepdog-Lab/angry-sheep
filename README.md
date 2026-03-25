@@ -25,9 +25,10 @@ Uses the default camera and serves WebSockets on **ws://localhost:8765**.
 
 ## Browser client
 
-In another terminal (repo root):
+In another terminal (repo root), install JS tooling once, then serve the client:
 
 ```bash
+npm install
 npm run client
 ```
 

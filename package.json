@@ -3,6 +3,9 @@
   "private": true,
   "description": "Browser client + Python ArUco WebSocket server",
   "scripts": {
-    "client": "npx --yes serve client -l 3000"
+    "client": "serve -l 3000 client"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
   }
 }

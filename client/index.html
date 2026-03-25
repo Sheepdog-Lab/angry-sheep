@@ -14,8 +14,9 @@
       </header>
       <canvas id="view" width="960" height="540"></canvas>
       <p class="hint">
-        Run <code>python server/server.py</code> with the venv active, then refresh. WebSocket:
-        <code>ws://localhost:8765</code>
+        Run <code>python server/server.py</code> with the venv active. Prefer
+        <code>npm run client</code> and open the printed URL (avoids file:// WebSocket issues). WebSocket
+        uses this page’s host on port <code>8765</code>.
       </p>
     </main>
     <script src="app.js"></script>
