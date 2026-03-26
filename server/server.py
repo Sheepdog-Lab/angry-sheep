@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import sys
 
 import cv2
@@ -46,10 +47,18 @@ async def send_data():
                 pts = corners[i][0]
                 cx = int(pts[:, 0].mean())
                 cy = int(pts[:, 1].mean())
+                # OpenCV: corners clockwise from marker top-left; 0→1 is “top” edge in marker frame.
+                p0, p1 = pts[0], pts[1]
+                edx = float(p1[0] - p0[0])
+                edy = float(p1[1] - p0[1])
+                elen = math.hypot(edx, edy) or 1.0
                 markers.append({
                     "id": int(marker_id[0]),
                     "x": cx,
-                    "y": cy
+                    "y": cy,
+                    "angle_deg": round(math.degrees(math.atan2(edy, edx)), 2),
+                    "dir_x": round(edx / elen, 4),
+                    "dir_y": round(edy / elen, 4),
                 })
 
         h, w = frame.shape[:2]
