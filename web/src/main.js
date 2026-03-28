@@ -5,6 +5,7 @@ import { drawPen } from './pen.js';
 import { drawTools } from './tools.js';
 import { updateFlock, drawFlock } from './sheep.js';
 import * as Session from './session.js';
+import { initTuning } from './tuning.js';
 
 new p5((p) => {
   let canvasSize;
@@ -13,6 +14,7 @@ new p5((p) => {
     canvasSize = Math.min(p.windowWidth, p.windowHeight);
     p.createCanvas(canvasSize, canvasSize);
     Session.startSession(p);
+    initTuning();
   };
 
   p.draw = () => {

@@ -53,6 +53,36 @@ export function updateCanvasSize(size) {
   canvasSize = size;
 }
 
+export function setToolCount(type, count) {
+  const current = state.tools.filter((t) => t.type === type);
+  const diff = count - current.length;
+  if (diff > 0) {
+    // Add tools at random positions inside the table
+    let maxId = state.tools.reduce((m, t) => Math.max(m, t.id), 0);
+    for (let i = 0; i < diff; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 0.15 + Math.random() * 0.25;
+      maxId++;
+      state.tools.push({
+        type,
+        id: maxId,
+        x: 0.5 + Math.cos(angle) * dist,
+        y: 0.5 + Math.sin(angle) * dist,
+        angle_deg: Math.floor(Math.random() * 360),
+      });
+    }
+  } else if (diff < 0) {
+    // Remove from the end
+    let toRemove = -diff;
+    for (let i = state.tools.length - 1; i >= 0 && toRemove > 0; i--) {
+      if (state.tools[i].type === type) {
+        state.tools.splice(i, 1);
+        toRemove--;
+      }
+    }
+  }
+}
+
 /**
  * Draw the HUD: tool legend + help text.
  */

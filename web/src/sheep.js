@@ -44,7 +44,7 @@ export function updateFlock(input) {
     applyEdgeBounce(sheep);
     applyToolReactions(sheep, tools);
     applyDeescalation(sheep, tools, voice, pet);
-    applyStressDecay(sheep, tools);
+    applyStressTracking(sheep, tools);
     applyPenCapture(sheep);
     move(sheep);
   }
@@ -113,6 +113,8 @@ function makeSheep(x, y, stress) {
     beingPetted: false,        // set each frame by de-escalation check
     _splitPending: false,
     _crisisFrames: 0,          // frames spent in crisis (for hint system)
+    // Grazing
+    grazeFullness: Math.random() * 0.3, // 0 = hungry, 1 = full; start slightly varied
   };
 }
 
@@ -175,6 +177,7 @@ function applyEdgeBounce(sheep) {
 
 function applyToolReactions(sheep, tools) {
   let nearbyBlocks = 0;
+  let nearGrass = false;
   const inCrisis = sheep.stress >= SHEEP.crisisThreshold;
 
   for (const tool of tools) {
@@ -201,9 +204,25 @@ function applyToolReactions(sheep, tools) {
     }
 
     if (tool.type === 'grass' && dist < SHEEP.grassAttractRadius && dist > 0.001) {
-      const force = SHEEP.grassAttractForce * (1 - dist / SHEEP.grassAttractRadius);
-      sheep.vx -= (dx / dist) * force;
-      sheep.vy -= (dy / dist) * force;
+      nearGrass = true;
+      if (inCrisis) {
+        // Mad sheep are always hungry — grass attracts and comforts them
+        const force = SHEEP.grassAttractForce * (1 - dist / SHEEP.grassAttractRadius);
+        sheep.vx -= (dx / dist) * force;
+        sheep.vy -= (dy / dist) * force;
+      } else {
+        // Calm sheep: attracted briefly, but fill up fast and lose interest
+        const hunger = 1 - sheep.grazeFullness;
+        if (hunger > 0.01) {
+          const force = SHEEP.grassAttractForce * hunger * (1 - dist / SHEEP.grassAttractRadius);
+          sheep.vx -= (dx / dist) * force;
+          sheep.vy -= (dy / dist) * force;
+        }
+        // Fill up quickly when close
+        if (dist < SHEEP.grassAttractRadius * 0.5) {
+          sheep.grazeFullness = Math.min(1, sheep.grazeFullness + SHEEP.grazeFillRate);
+        }
+      }
     }
 
     if (tool.type === 'block' && dist < SHEEP.blockDetectRadius && dist > 0.001) {
@@ -226,6 +245,11 @@ function applyToolReactions(sheep, tools) {
     const damping = Math.max(0.3, 1 - nearbyBlocks * 0.25);
     sheep.vx *= damping;
     sheep.vy *= damping;
+  }
+
+  // Digest when not near any grass
+  if (!nearGrass) {
+    sheep.grazeFullness = Math.max(0, sheep.grazeFullness - SHEEP.grazeDigestRate);
   }
 }
 
@@ -265,7 +289,7 @@ function applyDeescalation(sheep, tools, voice, pet) {
   }
 }
 
-function applyStressDecay(sheep, tools) {
+function applyStressTracking(sheep, tools) {
   // Track crisis duration for hint system
   if (sheep.stress >= SHEEP.crisisThreshold) {
     sheep._crisisFrames++;
@@ -273,7 +297,7 @@ function applyStressDecay(sheep, tools) {
     sheep._crisisFrames = 0;
   }
 
-  // Only decay stress passively if no sheepdogs are nearby
+  // Reset dog push counter when no sheepdogs nearby
   let dogNearby = false;
   for (const tool of tools) {
     if (tool.type === 'sheepdog') {
@@ -284,9 +308,6 @@ function applyStressDecay(sheep, tools) {
         break;
       }
     }
-  }
-  if (!dogNearby && sheep.stress > 0) {
-    sheep.stress = Math.max(0, sheep.stress - SHEEP.stressDecay);
   }
   if (!dogNearby) {
     sheep.dogPushCount = 0;
@@ -318,7 +339,7 @@ function angleLerp(from, to, t) {
 
 function move(sheep) {
   const inCrisis = sheep.stress >= SHEEP.crisisThreshold;
-  const maxSpd = inCrisis ? SHEEP.maxSpeed * SHEEP.crisisSpeedMult : SHEEP.maxSpeed;
+  const maxSpd = inCrisis ? SHEEP.speed * SHEEP.crisisSpeedMult : SHEEP.speed * 1.6;
   const speed = Math.sqrt(sheep.vx * sheep.vx + sheep.vy * sheep.vy);
 
   if (speed > SHEEP.speed * 0.3) {

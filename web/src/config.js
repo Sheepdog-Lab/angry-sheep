@@ -59,7 +59,6 @@ export const SHEEP = {
   color: '#f0f0e8',
   eyeColor: '#222222',
   speed: 0.0012,            // base wander speed per frame
-  maxSpeed: 0.002,
   wanderJitter: 0.3,        // how much the wander angle drifts per frame
   flockSeparation: 0.06,    // min distance sheep try to keep from each other
   separationForce: 0.0004,
@@ -70,13 +69,14 @@ export const SHEEP = {
   dogFleeForce: 0.004,
   grassAttractRadius: 0.12, // sheep attracted when grass is within this range
   grassAttractForce: 0.002,
+  grazeFillRate: 0.008,     // fullness gained per frame while near grass (calm sheep fill fast)
+  grazeDigestRate: 0.001,   // fullness lost per frame while away from grass
   blockDetectRadius: 0.05,  // sheep avoid blocks within this range
   blockRepelForce: 0.003,
   // Pen capture
   captureSettleTime: 60,    // frames a sheep must stay inside pen to be captured
   // Stress & crisis
   stressPerPush: 0.35,      // stress added per sheepdog encounter
-  stressDecay: 0.001,       // passive stress decay per frame when no dogs nearby
   crisisThreshold: 1.0,     // stress level that triggers crisis mode
   crisisSpeedMult: 1.8,     // speed multiplier during crisis
   crisisWanderJitter: 0.8,  // erratic movement jitter during crisis
