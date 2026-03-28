@@ -1,39 +1,80 @@
-# angry-sheep
+# Angry Sheep
 
-Tabletop museum experience: Python OpenCV WebSocket server for ArUco marker tracking.
+Tabletop museum exhibit: children collaborate to guide digital sheep into a pen using physical tools. Built for the Children's Museum of Pittsburgh, targeting ages 6–8.
+
+A circular table displays a projected scene with digital sheep. Children place physical blocks, sheepdogs, and grass on the table to herd the sheep — but rough handling triggers crisis mode, and only calming actions (feeding, petting, kind words) can help.
 
 ## Repo layout
 
 | Path | Purpose |
-|------|--------|
-| `server/` | `server.py`, `marker_client.py`, `requirements.txt` |
-| `markers/` | Optional printed ArUco assets (see `markers/README.md`) |
-| *(repo root)* | Docs, `README.md`, design notes |
+|------|---------|
+| `web/` | Frontend web app (p5.js + Vite) — sheep simulation, game logic, session flow |
+| `server/` | Python ArUco marker tracking server (WebSocket) |
+| `markers/` | Printable ArUco marker assets (see `markers/README.md`) |
+| *(root)* | Docs, design concept, roadmap, session logs |
 
-## Python server
+## Web app (frontend)
 
 ```bash
-cd /path/to/angry-sheep
+cd web
+npm install
+npm run dev
+```
+
+Opens at **http://localhost:5173/**. The app runs entirely with mock input (mouse/keyboard) — no physical hardware needed.
+
+### Controls (mock input)
+
+| Action | How |
+|--------|-----|
+| Move a tool | Drag it |
+| Rotate a tool | Scroll wheel while hovering |
+| Pet a sheep | Hold left-click near a sheep |
+| Speak kindly | Hold **V** key |
+
+### What's implemented
+
+- **Scene** — Circular play area with black mask (projection-ready), circular pen with openings
+- **Sheep** — Wandering, flocking, tool reactions (flee dogs, attract to grass, bounce off blocks)
+- **Crisis mode** — Stress builds from sheepdogs, sheep turn red/angry, ignore pushing, can multiply
+- **De-escalation** — Grass calming, petting (heart animation), voice input
+- **Session flow** — Intro animation → 3-min timer → win celebration or timeout → auto-reset
+- **Hints** — Icon-based hint bubbles appear on unresolved crisis sheep
+
+### Architecture
+
+The frontend consumes a shared JSON contract:
+
+```json
+{
+  "tools": [{ "type": "block", "id": 0, "x": 0.45, "y": 0.30, "angle_deg": 90 }],
+  "voice": { "active": false, "sentiment": null },
+  "pet":   { "active": false, "x": null, "y": null }
+}
+```
+
+Currently produced by `web/src/input.js` (mock). In production, a WebSocket connection to `server.py` replaces it — the rest of the app doesn't change.
+
+## Python server (tracking layer)
+
+```bash
+cd server
 python3 -m venv venv
-source venv/bin/activate   # Mac/Linux
-pip install -r server/requirements.txt
-python server/server.py
+source venv/bin/activate
+pip install -r requirements.txt
+python server.py
 ```
 
-Uses the default camera and serves WebSockets on **ws://127.0.0.1:8765**.
+Uses the default camera and serves WebSocket on **ws://127.0.0.1:8765**. Streams ArUco marker positions as JSON.
 
-Messages are JSON objects with `width`, `height`, and `markers`. Each marker has `id`, `x`, `y` (center, pixels), `angle_deg` (in-plane heading of the marker’s top edge: 0° = right in the image, 90° = down), and unit vector `dir_x`, `dir_y` along that edge.
+## Team
 
-## Python client (same protocol)
+- Diane Hu, Cameron, Nevil
+- CMU MDes/MPS Studio
 
-In a **second** terminal (venv active), while `server.py` is running:
+## Docs
 
-```bash
-python server/marker_client.py
-```
-
-Optional: `python server/marker_client.py --raw` prints one JSON line per frame; `--uri ws://HOST:PORT` if the server is not local.
-
-## Team notes
-
-- Do not commit `venv/` (see `.gitignore`).
+- [Design concept](angry_sheep_design_concept.md) — Research foundation, design principles, emotional mechanics
+- [Roadmap](ROADMAP.md) — Two-track development plan (frontend + physical layer)
+- [Usability test plan](usability_test_plan.md) — Round 1 testing protocol for the digital prototype
+- [Session log](session_log_2026_03_28.md) — Build progress from 2026-03-28
