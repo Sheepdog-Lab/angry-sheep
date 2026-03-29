@@ -6,6 +6,8 @@ import { drawTools } from './tools.js';
 import { updateFlock, drawFlock } from './sheep.js';
 import * as Session from './session.js';
 import { initTuning } from './tuning.js';
+import { connectMarkerStream } from './markerStream.js';
+import { drawMarkerOverlay } from './markerOverlay.js';
 
 new p5((p) => {
   let canvasSize;
@@ -15,6 +17,7 @@ new p5((p) => {
     p.createCanvas(canvasSize, canvasSize);
     Session.startSession(p);
     initTuning();
+    connectMarkerStream();
   };
 
   p.draw = () => {
@@ -41,6 +44,9 @@ new p5((p) => {
       drawFlock(p, canvasSize);
       drawTools(p, state.tools, canvasSize, Input.getHoveredId());
     }
+
+    // Physical ArUco markers from server.py (camera → WebSocket)
+    drawMarkerOverlay(p, canvasSize);
 
     // Black mask
     const ctx = p.drawingContext;

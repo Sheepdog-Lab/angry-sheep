@@ -8,7 +8,8 @@ A circular table displays a projected scene with digital sheep. Children place p
 
 | Path | Purpose |
 |------|---------|
-| `web/` | Frontend web app (p5.js + Vite) — sheep simulation, game logic, session flow |
+| `web/` | Frontend web app (p5.js + Vite 6, **Node 18+**) — runs on its own |
+| `dev/web-node14/` | Optional: same UI via Vite 2 if you must use Node 14 (see its README) |
 | `server/` | Python ArUco marker tracking server (WebSocket) |
 | `markers/` | Printable ArUco marker assets (see `markers/README.md`) |
 | *(root)* | Docs, design concept, roadmap, session logs |
@@ -21,7 +22,7 @@ npm install
 npm run dev
 ```
 
-Opens at **http://localhost:5173/**. The app runs entirely with mock input (mouse/keyboard) — no physical hardware needed.
+Opens at **http://localhost:5173/** (Vite’s default). **Tools** still use mock mouse/keyboard. **Printed ArUco markers** appear as colored dots when **`python server/server.py`** is running (WebSocket `ws://127.0.0.1:8765`). If left/right feels reversed, set `mirrorX: true` under `MARKER_STREAM` in `web/src/config.js`. If `npm install` / `vite` fails on an old Node, use **`dev/web-node14/`** (see `dev/web-node14/README.md`).
 
 ### Controls (mock input)
 
@@ -59,15 +60,17 @@ Currently produced by `web/src/input.js` (mock). In production, a WebSocket conn
 
 ## Python server (tracking layer)
 
+Flow: **OpenCV (camera) → ArUco (markers) → WebSocket (JSON).** Full setup (camera permissions, printing markers, test client) is in **[server/README.md](server/README.md)**.
+
 ```bash
-cd server
+cd /path/to/angry-sheep
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
-python server.py
+pip install -r server/requirements.txt
+python server/server.py
 ```
 
-Uses the default camera and serves WebSocket on **ws://127.0.0.1:8765**. Streams ArUco marker positions as JSON.
+Serves **ws://127.0.0.1:8765**. Quick test: second terminal, `python server/marker_client.py`.
 
 ## Team
 

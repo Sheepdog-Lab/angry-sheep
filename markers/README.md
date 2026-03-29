@@ -1,10 +1,34 @@
-# ArUco markers (optional)
+# ArUco markers
 
-The server uses **DICT_4X4_50** (`cv2.aruco.DICT_4X4_50`). Print markers on stiff paper and keep lighting even for reliable tracking.
+The server uses **DICT_4X4_50** (`cv2.aruco.DICT_4X4_50`). Print markers on stiff paper with even lighting for reliable tracking.
 
-**Generate images / PDFs**
+## Step 5 — Generate PNGs for printing (IDs 0–10)
 
-- Use OpenCV (`cv2.aruco.generateImageMarker`) or any generator that supports **4×4** dictionaries with **50** symbols.
-- Export PNG/SVG, then print at a known physical size (larger is easier for the webcam).
+From the **repo root**, with the same Python venv as the server:
 
-Drop printable PDFs or exported images here so the team shares one set of IDs.
+```bash
+source venv/bin/activate   # Mac/Linux
+pip install -r server/requirements.txt   # if needed (opencv-contrib-python)
+python markers/generate_markers.py
+```
+
+Defaults: **IDs 0–10**, **400×400 px** per marker, output folder **`markers/generated/`**.
+
+Options:
+
+```bash
+python markers/generate_markers.py --ids 0-10 --size 500
+python markers/generate_markers.py --ids 3        # single id
+python markers/generate_markers.py --out /tmp/markers
+```
+
+Files look like: `aruco_4x4_50_id_00.png` … `aruco_4x4_50_id_10.png`.
+
+**Printing:** Use **100% scale** (disable “fit to page”) so physical size matches what you expect; larger markers are easier for the webcam.
+
+**Dictionary:** Only marker IDs **0–49** exist for DICT_4X4_50; the script skips ids outside that range.
+
+## Optional
+
+- Add `markers/generated/*.png` to git if the team wants shared printables without rerunning the script.
+- You can also use other generators that support **4×4**, dictionary **50** symbols, matching IDs.
