@@ -1,9 +1,18 @@
 import p5 from 'p5';
-import { CANVAS_BG_COLOR, MASK_COLOR, TABLE_RADIUS } from './config.js';
+import {
+  CANVAS_BG_COLOR,
+  MASK_COLOR,
+  TABLE_RADIUS,
+  TERRAIN_TEXTURE_URL,
+  SHEEP_TEXTURE_URL,
+  SHEEPDOG_TEXTURE_URL,
+  BLOCKS_TEXTURE_URL,
+  GRASS_TEXTURE_URL,
+} from './config.js';
 import * as Input from './input.js';
 import { drawPen } from './pen.js';
-import { drawTools } from './tools.js';
-import { updateFlock, drawFlock } from './sheep.js';
+import { drawTools, setGrassSprite, setSheepdogSprite, setBlockSprite } from './tools.js';
+import { updateFlock, drawFlock, setSheepSprite, getFlock } from './sheep.js';
 import * as Session from './session.js';
 import { initTuning } from './tuning.js';
 import { connectMarkerStream } from './markerStream.js';
@@ -15,10 +24,32 @@ initCameraSwitcher().catch((e) => console.warn('[camera] init:', e));
 
 new p5((p) => {
   let canvasSize;
+  /** @type {import('p5').Image | null} */
+  let terrainImg = null;
+  /** @type {import('p5').Image | null} */
+  let sheepImg = null;
+  /** @type {import('p5').Image | null} */
+  let sheepdogImg = null;
+  /** @type {import('p5').Image | null} */
+  let grassImg = null;
+  /** @type {import('p5').Image | null} */
+  let blockImg = null;
+
+  p.preload = () => {
+    terrainImg = p.loadImage(TERRAIN_TEXTURE_URL);
+    sheepImg = p.loadImage(SHEEP_TEXTURE_URL);
+    sheepdogImg = p.loadImage(SHEEPDOG_TEXTURE_URL);
+    grassImg = p.loadImage(GRASS_TEXTURE_URL);
+    blockImg = p.loadImage(BLOCKS_TEXTURE_URL);
+  };
 
   p.setup = () => {
     canvasSize = Math.min(p.windowWidth, p.windowHeight);
     p.createCanvas(canvasSize, canvasSize);
+    setSheepSprite(sheepImg);
+    setSheepdogSprite(sheepdogImg);
+    setGrassSprite(grassImg);
+    setBlockSprite(blockImg);
     Session.startSession(p);
     initTuning();
     connectMarkerStream();
@@ -38,7 +69,19 @@ new p5((p) => {
     }
 
     // -- Render --
-    p.background(CANVAS_BG_COLOR);
+    if (terrainImg && terrainImg.width > 0) {
+      const iw = terrainImg.width;
+      const ih = terrainImg.height;
+      const scale = Math.max(canvasSize / iw, canvasSize / ih);
+      const dw = iw * scale;
+      const dh = ih * scale;
+      p.push();
+      p.imageMode(p.CENTER);
+      p.image(terrainImg, canvasSize / 2, canvasSize / 2, dw, dh);
+      p.pop();
+    } else {
+      p.background(CANVAS_BG_COLOR);
+    }
 
     // Pen (always visible)
     drawPen(p, canvasSize);
@@ -46,7 +89,7 @@ new p5((p) => {
     // Sheep and tools (visible during intro fade-in, playing, and outro)
     if (phase !== 'reset') {
       drawFlock(p, canvasSize);
-      drawTools(p, state.tools, canvasSize, Input.getHoveredId());
+      drawTools(p, state.tools, canvasSize, Input.getHoveredId(), getFlock());
     }
 
     // Physical ArUco markers from server.py (camera → WebSocket)

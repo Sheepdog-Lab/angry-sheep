@@ -1,5 +1,11 @@
 // -- Canvas --
 export const CANVAS_BG_COLOR = '#2d5a1b';
+/** Served from `web/public/` (Vite → URL root). */
+export const TERRAIN_TEXTURE_URL = '/terrain.png';
+export const SHEEP_TEXTURE_URL = '/sheep.png';
+export const SHEEPDOG_TEXTURE_URL = '/sheepdog.png';
+export const BLOCKS_TEXTURE_URL = '/blocks.png';
+export const GRASS_TEXTURE_URL = '/grass.png';
 export const MASK_COLOR = '#000000'; // black outside the table circle
 
 // -- Pen / Corral (circular with gaps) --

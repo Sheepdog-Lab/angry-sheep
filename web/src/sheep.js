@@ -5,6 +5,17 @@ import { isInsidePen } from './pen.js';
 let flock = [];
 let nextSheepId = 0;
 
+/** @type {import('p5').Image | null} */
+let sheepSprite = null;
+
+/**
+ * Called from main.js after preload so flock drawing can use the PNG sprite.
+ * @param {import('p5').Image | null} img
+ */
+export function setSheepSprite(img) {
+  sheepSprite = img;
+}
+
 // -- Public API --
 
 export function spawnFlock(count = SHEEP.count) {
@@ -394,69 +405,33 @@ function drawSheep(p, sheep, canvasSize) {
 
   const facing = sheep.facing;
 
-  // Stress color: lerp white → orange → red
-  let woolColor, puffColor;
-  if (stressRatio < 0.5) {
-    // Calm to mildly stressed: white → warm orange
-    const t = stressRatio * 2;
-    woolColor = lerpColorHex('#f0f0e8', '#f0a050', t);
-    puffColor = lerpColorHex('#e8e8dd', '#e8904a', t);
+  if (sheepSprite && sheepSprite.width > 0) {
+    // Asset faces “up”; align with movement direction
+    p.push();
+    p.rotate(facing + Math.PI / 2);
+    const size = r * 2.4;
+    p.imageMode(p.CENTER);
+    if (inCrisis) {
+      p.tint(255, 110, 95, 255);
+    } else if (stressRatio < 0.5) {
+      const t = stressRatio * 2;
+      p.tint(255, Math.round(255 - t * 45), Math.round(255 - t * 70), 255);
+    } else {
+      const t = (stressRatio - 0.5) * 2;
+      p.tint(
+        255,
+        Math.round(210 - t * 90),
+        Math.round(185 - t * 115),
+        255,
+      );
+    }
+    p.image(sheepSprite, 0, 0, size, size);
+    p.noTint();
+    p.pop();
   } else {
-    // Stressed to crisis: orange → red
-    const t = (stressRatio - 0.5) * 2;
-    woolColor = lerpColorHex('#f0a050', '#e03030', t);
-    puffColor = lerpColorHex('#e8904a', '#d02828', t);
-  }
-
-  // Wool puffs
-  p.noStroke();
-  p.fill(puffColor);
-  const puffCount = 6;
-  for (let i = 0; i < puffCount; i++) {
-    const a = (i / puffCount) * Math.PI * 2;
-    const puffDist = r * 0.4;
-    p.ellipse(Math.cos(a) * puffDist, Math.sin(a) * puffDist, r * 1.0);
-  }
-
-  // Main body
-  p.fill(woolColor);
-  p.ellipse(0, 0, r * 1.6, r * 1.4);
-
-  // Face
-  const faceDist = r * 0.5;
-  const fx = Math.cos(facing) * faceDist;
-  const fy = Math.sin(facing) * faceDist;
-  p.fill('#3a3a3a');
-  p.ellipse(fx, fy, r * 0.7, r * 0.6);
-
-  // Eyes — wider/angrier when stressed
-  const eyeSize = r * (0.18 + stressRatio * 0.08);
-  p.fill(inCrisis ? '#ff3333' : SHEEP.eyeColor);
-  const eyeOff = r * 0.15;
-  const eyePerp = facing + Math.PI / 2;
-  p.ellipse(
-    fx + Math.cos(eyePerp) * eyeOff,
-    fy + Math.sin(eyePerp) * eyeOff,
-    eyeSize,
-  );
-  p.ellipse(
-    fx - Math.cos(eyePerp) * eyeOff,
-    fy - Math.sin(eyePerp) * eyeOff,
-    eyeSize,
-  );
-
-  // Angry eyebrows when stressed
-  if (stressRatio > 0.3) {
-    p.stroke(inCrisis ? '#ff3333' : '#555555');
-    p.strokeWeight(1.5);
-    const browLen = r * 0.2;
-    const browY = -r * 0.08;
-    // Left brow (angled down toward center)
-    const bl = { x: fx + Math.cos(eyePerp) * eyeOff, y: fy + Math.sin(eyePerp) * eyeOff };
-    p.line(bl.x - browLen * 0.5, bl.y + browY - browLen * 0.3, bl.x + browLen * 0.5, bl.y + browY + browLen * 0.1);
-    // Right brow
-    const br = { x: fx - Math.cos(eyePerp) * eyeOff, y: fy - Math.sin(eyePerp) * eyeOff };
-    p.line(br.x - browLen * 0.5, br.y + browY + browLen * 0.1, br.x + browLen * 0.5, br.y + browY - browLen * 0.3);
+    p.noStroke();
+    p.fill(inCrisis ? '#e03030' : SHEEP.color);
+    p.ellipse(0, 0, r * 1.6, r * 1.4);
   }
 
   // Pen capture progress ring
@@ -486,17 +461,4 @@ function drawHeart(p, x, y, size) {
   p.bezierVertex(x, y - size * 0.2, x - size * 0.6, y - size * 0.4, x, y - size * 0.8);
   p.bezierVertex(x + size * 0.6, y - size * 0.4, x, y - size * 0.2, x, y + size * 0.3);
   p.endShape(p.CLOSE);
-}
-
-function lerpColorHex(hex1, hex2, t) {
-  const r1 = parseInt(hex1.slice(1, 3), 16);
-  const g1 = parseInt(hex1.slice(3, 5), 16);
-  const b1 = parseInt(hex1.slice(5, 7), 16);
-  const r2 = parseInt(hex2.slice(1, 3), 16);
-  const g2 = parseInt(hex2.slice(3, 5), 16);
-  const b2 = parseInt(hex2.slice(5, 7), 16);
-  const r = Math.round(r1 + (r2 - r1) * t);
-  const g = Math.round(g1 + (g2 - g1) * t);
-  const b = Math.round(b1 + (b2 - b1) * t);
-  return `rgb(${r},${g},${b})`;
 }

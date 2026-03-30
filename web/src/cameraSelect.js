@@ -8,6 +8,37 @@ import { onMarkerWsOpen, sendTrackingCommand } from './markerStream.js';
 import { startBrowserFramePump, stopBrowserFramePump } from './browserFramePump.js';
 
 const STORAGE_KEY = 'angrySheepCameraDeviceId';
+const PANEL_COLLAPSED_KEY = 'angrySheepCameraPanelCollapsed';
+
+function initCameraPanelToggle() {
+  const panel = document.getElementById('cameraPanel');
+  const toggle = document.getElementById('cameraPanelToggle');
+  if (!panel || !toggle) return;
+
+  function applyCollapsed(collapsed) {
+    panel.classList.toggle('camera-panel--collapsed', collapsed);
+    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    toggle.textContent = collapsed ? 'Show' : 'Hide';
+    toggle.title = collapsed ? 'Show camera controls' : 'Hide camera controls';
+    try {
+      localStorage.setItem(PANEL_COLLAPSED_KEY, collapsed ? '1' : '0');
+    } catch (e) {
+      /* private mode */
+    }
+  }
+
+  let initialCollapsed = false;
+  try {
+    initialCollapsed = localStorage.getItem(PANEL_COLLAPSED_KEY) === '1';
+  } catch (e) {
+    /* ignore */
+  }
+  applyCollapsed(initialCollapsed);
+
+  toggle.addEventListener('click', () => {
+    applyCollapsed(!panel.classList.contains('camera-panel--collapsed'));
+  });
+}
 
 function syncOpenCvToDropdown() {
   const sel = getSelectEl();
@@ -90,6 +121,8 @@ function populateSelect(select, videoInputs) {
 }
 
 export async function initCameraSwitcher() {
+  initCameraPanelToggle();
+
   const select = getSelectEl();
   const video = getVideoEl();
   if (!select || !video) return;
