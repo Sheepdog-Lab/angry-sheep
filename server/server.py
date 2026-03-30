@@ -1,33 +1,29 @@
 """
 Angry Sheep — ArUco tracking server
 
-New flow (every ~30ms, while running):
+Flow:
+  • Prefer JPEG frames from the browser (same camera as the <video> preview).
+  • If no fresh browser frame, fall back to OpenCV VideoCapture.
 
-    ┌──────────┐     ┌─────────────┐     ┌─────────────┐
-    │ OpenCV   │ ──► │ ArUco       │ ──► │ WebSocket   │
-    │ (camera) │     │ (detect IDs)│     │ (JSON out)  │
-    └──────────┘     └─────────────┘     └─────────────┘
-         │                  │                   │
-    BGR frame          id, x, y,           all connected
-    from webcam        angle, dir_*        clients
+Clients may send:
+  • {"cmd": "frameJpeg", "data": "<base64 jpeg>"}  — decoded and run through ArUco
+  • {"cmd": "setCameraIndex", "index": N}         — switch OpenCV fallback camera
 
-1. OpenCV  — VideoCapture reads a frame from the default webcam.
-2. ArUco   — Grayscale + detectMarkers (DICT_4X4_50); build marker list.
-3. WebSocket — Serialize JSON and send to every connected client.
-
-Async: a WebSocket server accepts clients; a parallel loop captures and broadcasts.
-See server/README.md for camera, printed markers, and how to test the full chain.
+See server/README.md
 """
 import asyncio
+import base64
 import json
 import math
 import sys
+import time
 
 import cv2
+import numpy as np
 import websockets
 
 # ---------------------------------------------------------------------------
-# 1) OpenCV — camera
+# 1) OpenCV — camera (fallback when browser is not sending frames)
 # ---------------------------------------------------------------------------
 
 CAMERA_INDEX = 0
@@ -49,7 +45,47 @@ def open_camera(index=CAMERA_INDEX):
     return cap
 
 
+def try_open_camera(index):
+    """Try to open a camera index without exiting the process."""
+    cap = cv2.VideoCapture(index)
+    return cap if cap.isOpened() else None
+
+
 cap = open_camera(CAMERA_INDEX)
+
+camera_commands = asyncio.Queue()
+
+# Latest frame from browser (BGR); OpenCV index order often ≠ getUserMedia order.
+_browser_bgr = None
+_browser_mono = 0.0
+BROWSER_FRAME_TTL_SEC = 0.55
+
+
+def ingest_browser_jpeg_b64(b64s):
+    """Decode base64 JPEG into BGR image; update shared buffer."""
+    global _browser_bgr, _browser_mono
+    try:
+        raw = base64.b64decode(b64s)
+        arr = np.frombuffer(raw, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is not None and img.size > 0:
+            _browser_bgr = img
+            _browser_mono = time.monotonic()
+    except Exception:
+        pass
+
+
+def take_frame_for_detection():
+    """Return (frame_bgr, source_str) or (None, None)."""
+    global _browser_bgr, _browser_mono
+    now = time.monotonic()
+    if _browser_bgr is not None and (now - _browser_mono) < BROWSER_FRAME_TTL_SEC:
+        return _browser_bgr, "browser"
+    ret, frame = cap.read()
+    if ret and frame is not None and frame.size > 0:
+        return frame, "opencv"
+    return None, None
+
 
 # ---------------------------------------------------------------------------
 # 2) ArUco — dictionary + detector (must match printed markers)
@@ -60,9 +96,7 @@ ARUCO_DICTIONARY = aruco.DICT_4X4_50
 dictionary = aruco.getPredefinedDictionary(ARUCO_DICTIONARY)
 parameters = aruco.DetectorParameters()
 
-# Only emit these marker IDs. OpenCV often hallucinates random IDs (e.g. 17, 37) on
-# noise, glare, or background texture. Set to None to allow all DICT_4X4_50 ids (0–49).
-ALLOWED_MARKER_IDS = frozenset(range(0, 11))  # same default set as markers/generate_markers.py
+ALLOWED_MARKER_IDS = frozenset(range(0, 11))
 
 
 def detect_markers_bgr(frame_bgr):
@@ -82,7 +116,6 @@ def detect_markers_bgr(frame_bgr):
             pts = corners[i][0]
             cx = int(pts[:, 0].mean())
             cy = int(pts[:, 1].mean())
-            # Corners clockwise from marker top-left; edge 0→1 = “top” of tag in the image.
             p0, p1 = pts[0], pts[1]
             edx = float(p1[0] - p0[0])
             edy = float(p1[1] - p0[1])
@@ -103,23 +136,42 @@ def detect_markers_bgr(frame_bgr):
 
 
 # ---------------------------------------------------------------------------
-# 3) WebSocket — who is listening, and sending JSON
+# 3) WebSocket
 # ---------------------------------------------------------------------------
 
 clients = set()
 
 
 async def websocket_handler(websocket):
-    """Register a client; remove when they disconnect."""
+    """Register client; read control + JPEG frames; remove on disconnect."""
     clients.add(websocket)
     try:
-        await websocket.wait_closed()
+        async for message in websocket:
+            try:
+                data = json.loads(message)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            cmd = data.get("cmd")
+            if cmd == "frameJpeg":
+                b64 = data.get("data")
+                if isinstance(b64, str) and b64:
+                    ingest_browser_jpeg_b64(b64)
+                continue
+            if cmd == "setCameraIndex":
+                try:
+                    idx = int(data.get("index", 0))
+                except (TypeError, ValueError):
+                    continue
+                if idx < 0:
+                    continue
+                await camera_commands.put(idx)
     finally:
         clients.remove(websocket)
 
 
 async def broadcast_markers_json(message: str):
-    """Send one JSON string to all clients; drop broken connections."""
     for ws in list(clients):
         try:
             await ws.send(message)
@@ -128,13 +180,27 @@ async def broadcast_markers_json(message: str):
 
 
 async def capture_and_stream_loop():
-    """
-    Core loop: OpenCV read → ArUco → WebSocket.
-    Runs forever alongside the WebSocket server.
-    """
+    global cap
     while True:
-        ret, frame = cap.read()
-        if not ret:
+        try:
+            while True:
+                new_idx = camera_commands.get_nowait()
+                ncap = try_open_camera(new_idx)
+                if ncap is not None:
+                    cap.release()
+                    cap = ncap
+                    print("OpenCV fallback camera -> index %d" % new_idx, flush=True)
+                else:
+                    print(
+                        "OpenCV: could not open camera index %d (keeping previous)"
+                        % new_idx,
+                        file=sys.stderr,
+                    )
+        except asyncio.QueueEmpty:
+            pass
+
+        frame, _src = take_frame_for_detection()
+        if frame is None:
             await asyncio.sleep(0.05)
             continue
 
@@ -150,12 +216,18 @@ async def main():
     port = 8765
     print(
         "Tracking server running.\n"
-        "  Flow: OpenCV (camera) → ArUco (DICT_4X4_50) → WebSocket JSON\n"
+        "  Primary: JPEG frames from browser (same camera as UI preview).\n"
+        "  Fallback: OpenCV VideoCapture if no fresh browser frames.\n"
         "  URL:  ws://%s:%s\n"
         "  Docs: server/README.md"
         % (host, port)
     )
-    async with websockets.serve(websocket_handler, host, port):
+    async with websockets.serve(
+        websocket_handler,
+        host,
+        port,
+        max_size=16 * 1024 * 1024,
+    ):
         await capture_and_stream_loop()
 
 

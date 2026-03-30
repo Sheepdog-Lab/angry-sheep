@@ -15,9 +15,50 @@
       height: 100vh;
     }
     canvas { display: block; }
+    .camera-panel {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      z-index: 10000;
+      background: rgba(0, 0, 0, 0.82);
+      color: #e8e8e8;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font: 12px system-ui, -apple-system, sans-serif;
+      max-width: min(300px, 42vw);
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+    }
+    .camera-panel label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    #cameraSelect {
+      width: 100%;
+      margin-bottom: 8px;
+      padding: 6px 8px;
+      font: inherit;
+      border-radius: 4px;
+      border: 1px solid #444;
+      background: #2a2a2a;
+      color: #eee;
+    }
+    #video {
+      display: block;
+      width: 100%;
+      max-height: 160px;
+      border-radius: 4px;
+      background: #111;
+      object-fit: cover;
+    }
   </style>
 </head>
 <body>
+  <div class="camera-panel" aria-label="Camera preview">
+    <label for="cameraSelect">Camera</label>
+    <select id="cameraSelect"></select>
+    <video id="video" autoplay playsinline muted></video>
+  </div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

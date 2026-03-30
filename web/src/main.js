@@ -8,6 +8,10 @@ import * as Session from './session.js';
 import { initTuning } from './tuning.js';
 import { connectMarkerStream } from './markerStream.js';
 import { drawMarkerOverlay } from './markerOverlay.js';
+import { initCameraSwitcher } from './cameraSelect.js';
+import './browserFramePump.js';
+
+initCameraSwitcher().catch((e) => console.warn('[camera] init:', e));
 
 new p5((p) => {
   let canvasSize;

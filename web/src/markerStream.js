@@ -9,6 +9,29 @@ let frameH = 480;
 /** @type {Map<number, { x: number, y: number, miss: number, id: number }>} */
 const stableById = new Map();
 
+const wsOpenCallbacks = [];
+
+/** Register a callback when the tracking WebSocket connects (and immediately if already open). */
+export function onMarkerWsOpen(cb) {
+  wsOpenCallbacks.push(cb);
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    try {
+      cb();
+    } catch (e) {
+      /* ignore */
+    }
+  }
+}
+
+/** Tell Python OpenCV which camera index to use (same order as the browser dropdown). */
+export function sendTrackingCommand(obj) {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(obj));
+    return true;
+  }
+  return false;
+}
+
 function scheduleReconnect() {
   if (reconnectTimer) return;
   reconnectTimer = window.setTimeout(() => {
@@ -93,11 +116,21 @@ export function connectMarkerStream() {
   socket.addEventListener('open', () => {
     connected = true;
     console.info('[markers] connected', url);
+    wsOpenCallbacks.forEach((cb) => {
+      try {
+        cb();
+      } catch (e) {
+        /* ignore */
+      }
+    });
   });
 
   socket.addEventListener('message', (ev) => {
     try {
       const data = JSON.parse(ev.data);
+      if (data && typeof data === 'object' && data.cmd !== undefined) {
+        return;
+      }
       let list = [];
       if (Array.isArray(data)) {
         list = data;

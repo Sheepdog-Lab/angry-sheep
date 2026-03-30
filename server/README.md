@@ -75,6 +75,12 @@ The `web/` app currently uses **mock** mouse/keyboard input. Wiring it to this W
 
 ---
 
+## Browser camera ↔ tracking (recommended)
+
+The page sends **JPEG snapshots** of the selected **`<video>`** as **`{"cmd":"frameJpeg","data":"<base64>"}`**. The server decodes them and runs ArUco on **those** pixels, so marker dots match the **same** camera as the preview. OpenCV **`VideoCapture`** is only a **fallback** if no fresh browser frame arrives for ~0.5s.
+
+You can still send **`{"cmd":"setCameraIndex","index":N}`** to change which device OpenCV uses when falling back.
+
 ## False-positive IDs
 
 OpenCV can briefly “see” wrong marker IDs (e.g. 17, 37) on glare or clutter. By default **`server.py` only emits IDs 0–10**, matching `markers/generate_markers.py`. Change **`ALLOWED_MARKER_IDS`** in `server.py` to `None` for all 0–49, or `frozenset({...})` for a custom set. Match **`allowedMarkerIds`** in `web/src/config.js` for the overlay.
