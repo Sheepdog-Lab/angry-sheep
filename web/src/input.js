@@ -1,5 +1,6 @@
 import { TOOL_COLORS, TOOL_HIT_RADIUS, TOOL_ROTATE_STEP, TABLE_RADIUS, INITIAL_TOOLS } from './config.js';
 import { hitTest } from './tools.js';
+import * as Session from './session.js';
 
 // -- State (matches shared contract) --
 const state = {
@@ -124,6 +125,10 @@ function onMousePressed() {
   if (!isInsideCanvas(p.mouseX, p.mouseY)) return;
   if (p.mouseButton !== p.LEFT) return;
 
+  if (Session.getPhase() === 'win') {
+    return;
+  }
+
   mouseIsDown = true;
 
   const n = normalize(p.mouseX, p.mouseY);
@@ -174,6 +179,12 @@ function onMouseWheel(event) {
 }
 
 function onKeyDown(event) {
+  if (Session.getPhase() === 'win' && (event.code === 'Enter' || event.code === 'Space')) {
+    event.preventDefault();
+    Session.skipVictoryToReset();
+    return;
+  }
+
   if (event.key === 'r' || event.key === 'R') {
     if (hoveredId !== null) {
       const tool = state.tools.find((t) => t.id === hoveredId);

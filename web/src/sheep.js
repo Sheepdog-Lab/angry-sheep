@@ -21,8 +21,9 @@ export function setSheepSprite(img) {
 export function spawnFlock(count = SHEEP.count) {
   flock = [];
   nextSheepId = 0;
+  const grazerSlots = Math.round(count * SHEEP.grazerFraction);
   for (let i = 0; i < count; i++) {
-    flock.push(createSheep());
+    flock.push(createSheep(i < grazerSlots));
   }
 }
 
@@ -38,17 +39,23 @@ export function updateFlock(input) {
   const { tools, voice, pet } = input;
 
   for (const sheep of flock) {
+    sheep._tick = (sheep._tick || 0) + 1;
+
     if (sheep.captured) {
-      applyPenWander(sheep);
-      move(sheep);
+      applyPenCalmWander(sheep);
       continue;
     }
 
+    tryWakeGrazer(sheep, tools, voice, pet);
+
     // Crisis sheep behave differently
     if (sheep.stress >= SHEEP.crisisThreshold) {
+      sheep.grazerUnlocked = true;
       applyCrisisWander(sheep);
+    } else if (sheep.stationaryGrazer && !sheep.grazerUnlocked) {
+      applyStationaryIdle(sheep);
     } else {
-      applyWander(sheep);
+      applyNaturalWander(sheep);
     }
 
     applySeparation(sheep);
@@ -58,6 +65,13 @@ export function updateFlock(input) {
     applyStressTracking(sheep, tools);
     applyPenCapture(sheep);
     move(sheep);
+  }
+
+  for (const sheep of flock) {
+    if (sheep.captured) applyPenSeparation(sheep);
+  }
+  for (const sheep of flock) {
+    if (sheep.captured) move(sheep);
   }
 
   // Process pending splits after iteration
@@ -83,7 +97,7 @@ export function drawFlock(p, canvasSize) {
 
 // -- Internals --
 
-function createSheep() {
+function createSheep(stationaryGrazer = false) {
   const angle = Math.random() * Math.PI * 2;
   const minR = PEN.radius + 0.06;
   const maxR = TABLE_RADIUS - SHEEP.tableMargin;
@@ -93,6 +107,7 @@ function createSheep() {
     0.5 + Math.cos(angle) * dist,
     0.5 + Math.sin(angle) * dist,
     0,
+    { stationaryGrazer },
   );
 }
 
@@ -104,10 +119,22 @@ function createSheepAt(x, y, stress) {
     x + Math.cos(angle) * offset,
     y + Math.sin(angle) * offset,
     stress,
+    { stationaryGrazer: false },
   );
 }
 
-function makeSheep(x, y, stress) {
+/**
+ * @param {object} [opts]
+ * @param {boolean} [opts.stationaryGrazer]
+ */
+function makeSheep(x, y, stress, opts = {}) {
+  const stationaryGrazer = !!opts.stationaryGrazer;
+  const { speedMultMin, speedMultMax } = SHEEP;
+  const speedMult =
+    speedMultMin + Math.random() * (speedMultMax - speedMultMin);
+  const wanderJitterPersonal =
+    SHEEP.wanderJitter * (0.62 + Math.random() * 0.76);
+
   return {
     id: nextSheepId++,
     x,
@@ -124,50 +151,229 @@ function makeSheep(x, y, stress) {
     beingPetted: false,        // set each frame by de-escalation check
     _splitPending: false,
     _crisisFrames: 0,          // frames spent in crisis (for hint system)
-    // Grazing
+    _tick: 0,
+    // Movement personality (desync from flock)
+    speedMult,
+    wanderJitterPersonal,
+    wanderPhase: Math.random() * Math.PI * 2,
+    behaviorMode: Math.random() < 0.55 ? 'walk' : 'pause',
+    behaviorTimer: Math.floor(20 + Math.random() * 100),
+    // Stationary grazers (~¼ flock): idle until interaction
+    stationaryGrazer,
+    grazerUnlocked: !stationaryGrazer,
+    // Grazing (hunger sim)
     grazeFullness: Math.random() * 0.3, // 0 = hungry, 1 = full; start slightly varied
   };
 }
 
 // -- Behaviors --
 
-function applyPenWander(sheep) {
-  sheep.wanderAngle += (Math.random() - 0.5) * 0.4;
-  sheep.vx += Math.cos(sheep.wanderAngle) * SHEEP.speed * 0.12;
-  sheep.vy += Math.sin(sheep.wanderAngle) * SHEEP.speed * 0.12;
+/** Calm settled behavior inside pen — interior bias, edge avoidance, idle/wander. */
+function applyPenCalmWander(sheep) {
+  const PC = SHEEP.penInside;
+  const sm = sheep.speedMult ?? 1;
+
+  if (sheep.penBehaviorMode === undefined) {
+    sheep.penBehaviorMode = 'wander';
+    sheep.penBehaviorTimer = 20 + Math.floor(Math.random() * 80);
+  }
+
+  sheep.vx *= PC.velocityDamping;
+  sheep.vy *= PC.velocityDamping;
+
+  sheep.penBehaviorTimer -= 1;
+  if (sheep.penBehaviorTimer <= 0) {
+    if (Math.random() < PC.penIdleChance) {
+      sheep.penBehaviorMode = 'idle';
+      sheep.penBehaviorTimer = 45 + Math.floor(Math.random() * 140);
+    } else {
+      sheep.penBehaviorMode = 'wander';
+      sheep.wanderAngle += (Math.random() - 0.5) * PC.penTurnNoise;
+      sheep.penBehaviorTimer = 45 + Math.floor(Math.random() * 120);
+    }
+  }
 
   const dx = sheep.x - PEN.cx;
   const dy = sheep.y - PEN.cy;
   const dist = Math.sqrt(dx * dx + dy * dy);
-  const limit = PEN.radius * 0.7;
-  if (dist > limit && dist > 0.001) {
-    sheep.vx -= (dx / dist) * 0.001;
-    sheep.vy -= (dy / dist) * 0.001;
+  const r = PEN.radius;
+  const nd = dist < 1e-8 ? 0 : dist / r;
+
+  if (sheep.penBehaviorMode === 'idle') {
+    sheep.vx += (Math.random() - 0.5) * PC.idleDrift * sm;
+    sheep.vy += (Math.random() - 0.5) * PC.idleDrift * sm;
+  } else {
+    sheep.wanderAngle += (Math.random() - 0.5) * PC.penWanderJitter;
+    const spur =
+      SHEEP.speed * sm * PC.insidePenSpeedMultiplier * (0.11 + Math.random() * 0.1);
+    sheep.vx += Math.cos(sheep.wanderAngle) * spur;
+    sheep.vy += Math.sin(sheep.wanderAngle) * spur;
+  }
+
+  if (dist > 1e-6) {
+    const ux = -dx / dist;
+    const uy = -dy / dist;
+
+    if (nd > PC.penInteriorComfort) {
+      const t = (nd - PC.penInteriorComfort) / (1 - PC.penInteriorComfort);
+      const pull = PC.penCenterBias * t * t;
+      sheep.vx += ux * pull;
+      sheep.vy += uy * pull;
+    }
+    if (nd > PC.penWanderRadius) {
+      const t = (nd - PC.penWanderRadius) / (1 - PC.penWanderRadius);
+      const pull = PC.penCenterBias * 0.42 * t * t;
+      sheep.vx += ux * pull;
+      sheep.vy += uy * pull;
+    }
+    if (nd > PC.edgeAvoidStart) {
+      const t = (nd - PC.edgeAvoidStart) / (1 - PC.edgeAvoidStart);
+      const push = PC.penEdgeAvoidance * t * t;
+      sheep.vx += ux * push;
+      sheep.vy += uy * push;
+    }
   }
 }
 
-function applyWander(sheep) {
-  sheep.wanderAngle += (Math.random() - 0.5) * SHEEP.wanderJitter;
-  sheep.vx += Math.cos(sheep.wanderAngle) * SHEEP.speed * 0.3;
-  sheep.vy += Math.sin(sheep.wanderAngle) * SHEEP.speed * 0.3;
+function applyPenSeparation(sheep) {
+  const PC = SHEEP.penInside;
+  const sep = PC.sheepSeparationInsidePen;
+  const forceMul = PC.penSeparationForceMul;
+  for (const other of flock) {
+    if (other.id === sheep.id || !other.captured) continue;
+    const dx = sheep.x - other.x;
+    const dy = sheep.y - other.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < sep && dist > 0.001) {
+      const f = (SHEEP.separationForce * forceMul) / dist;
+      sheep.vx += (dx / dist) * f;
+      sheep.vy += (dy / dist) * f;
+    }
+  }
+}
+
+function tryWakeGrazer(sheep, tools, voice, pet) {
+  if (!sheep.stationaryGrazer || sheep.grazerUnlocked) return;
+
+  // Speaking (e.g. hold V) counts as interaction even before sentiment resolves.
+  if (voice && voice.active) {
+    sheep.grazerUnlocked = true;
+    return;
+  }
+
+  if (pet && pet.active) {
+    const dx = sheep.x - pet.x;
+    const dy = sheep.y - pet.y;
+    if (Math.sqrt(dx * dx + dy * dy) < SHEEP.petRadius * 1.15) {
+      sheep.grazerUnlocked = true;
+      return;
+    }
+  }
+
+  for (const tool of tools) {
+    const dx = sheep.x - tool.x;
+    const dy = sheep.y - tool.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 0.001) continue;
+
+    if (tool.type === 'sheepdog' && dist < SHEEP.dogFleeRadius) {
+      sheep.grazerUnlocked = true;
+      return;
+    }
+    if (tool.type === 'grass' && dist < SHEEP.grassAttractRadius) {
+      sheep.grazerUnlocked = true;
+      return;
+    }
+    if (tool.type === 'block' && dist < SHEEP.blockDetectRadius) {
+      sheep.grazerUnlocked = true;
+      return;
+    }
+  }
+}
+
+/** Mostly still: tiny drift + heavy damping until woken. */
+function applyStationaryIdle(sheep) {
+  const sm = sheep.speedMult ?? 1;
+  sheep.vx *= 0.84;
+  sheep.vy *= 0.84;
+  sheep.wanderAngle += (Math.random() - 0.5) * 0.035;
+
+  const t = sheep._tick * 0.035 + sheep.wanderPhase;
+  if (Math.random() < 0.018 + 0.01 * Math.sin(t)) {
+    const nudge = SHEEP.speed * sm * 0.045;
+    sheep.vx += (Math.random() - 0.5) * nudge;
+    sheep.vy += (Math.random() - 0.5) * nudge;
+  }
+}
+
+/**
+ * Walk / pause / turn with per-sheep timing so motion is not synchronized.
+ */
+function applyNaturalWander(sheep) {
+  const sm = sheep.speedMult ?? 1;
+  const t = sheep._tick * 0.038 + sheep.wanderPhase;
+  const desync = 1 + 0.32 * Math.sin(t);
+
+  if (sheep.behaviorMode === 'pause') {
+    sheep.vx *= 0.86 + Math.random() * 0.04;
+    sheep.vy *= 0.86 + Math.random() * 0.04;
+    sheep.wanderAngle += (Math.random() - 0.5) * 0.09;
+    sheep.behaviorTimer -= 1;
+    if (sheep.behaviorTimer <= 0) {
+      sheep.behaviorMode = 'walk';
+      sheep.behaviorTimer = 40 + Math.floor(Math.random() * 150);
+      if (Math.random() < 0.45) {
+        sheep.wanderAngle += (Math.random() - 0.5) * 1.1;
+      }
+    }
+    return;
+  }
+
+  // walk
+  const jitter =
+    (Math.random() - 0.5) * sheep.wanderJitterPersonal * desync;
+  sheep.wanderAngle += jitter;
+
+  const spur =
+    SHEEP.speed *
+    sm *
+    (0.22 + Math.random() * 0.14) *
+    (0.78 + 0.22 * Math.sin(t * 1.3));
+
+  sheep.vx += Math.cos(sheep.wanderAngle) * spur;
+  sheep.vy += Math.sin(sheep.wanderAngle) * spur;
+
+  sheep.behaviorTimer -= 1;
+  if (sheep.behaviorTimer <= 0) {
+    sheep.behaviorMode = 'pause';
+    sheep.behaviorTimer = 10 + Math.floor(Math.random() * 52);
+  }
+
+  if (Math.random() < 0.0018) {
+    sheep.behaviorMode = 'pause';
+    sheep.behaviorTimer = 6 + Math.floor(Math.random() * 28);
+  }
 }
 
 function applyCrisisWander(sheep) {
   // Erratic, fast wandering
+  const sm = sheep.speedMult ?? 1;
   sheep.wanderAngle += (Math.random() - 0.5) * SHEEP.crisisWanderJitter;
-  const spd = SHEEP.speed * SHEEP.crisisSpeedMult;
+  const spd = SHEEP.speed * SHEEP.crisisSpeedMult * sm;
   sheep.vx += Math.cos(sheep.wanderAngle) * spd * 0.4;
   sheep.vy += Math.sin(sheep.wanderAngle) * spd * 0.4;
 }
 
 function applySeparation(sheep) {
+  const sepScale =
+    sheep.stationaryGrazer && !sheep.grazerUnlocked ? 0.32 : 1;
   for (const other of flock) {
     if (other.id === sheep.id || other.captured) continue;
     const dx = sheep.x - other.x;
     const dy = sheep.y - other.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < SHEEP.flockSeparation && dist > 0.001) {
-      const force = SHEEP.separationForce / dist;
+      const force = (SHEEP.separationForce / dist) * sepScale;
       sheep.vx += (dx / dist) * force;
       sheep.vy += (dy / dist) * force;
     }
@@ -350,12 +556,26 @@ function angleLerp(from, to, t) {
 
 function move(sheep) {
   const inCrisis = sheep.stress >= SHEEP.crisisThreshold;
-  const maxSpd = inCrisis ? SHEEP.speed * SHEEP.crisisSpeedMult : SHEEP.speed * 1.6;
+  const inPen = sheep.captured;
+  const sm = sheep.speedMult ?? 1;
+  const maxSpd = inPen
+    ? SHEEP.speed *
+      SHEEP.penInside.insidePenSpeedMultiplier *
+      SHEEP.penInside.penMaxSpeedMult *
+      sm
+    : inCrisis
+      ? SHEEP.speed * SHEEP.crisisSpeedMult * sm
+      : SHEEP.speed * 1.6 * sm;
   const speed = Math.sqrt(sheep.vx * sheep.vx + sheep.vy * sheep.vy);
 
-  if (speed > SHEEP.speed * 0.3) {
+  const facingThresh = SHEEP.speed * sm * 0.28;
+  if (speed > facingThresh) {
     const target = Math.atan2(sheep.vy, sheep.vx);
-    sheep.facing = angleLerp(sheep.facing, target, inCrisis ? 0.25 : 0.1);
+    sheep.facing = angleLerp(
+      sheep.facing,
+      target,
+      inPen ? 0.06 : inCrisis ? 0.25 : 0.1,
+    );
   }
 
   if (speed > maxSpd) {
@@ -366,8 +586,25 @@ function move(sheep) {
   sheep.x += sheep.vx;
   sheep.y += sheep.vy;
 
-  sheep.vx *= inCrisis ? 0.95 : 0.92;
-  sheep.vy *= inCrisis ? 0.95 : 0.92;
+  sheep.vx *= inPen ? 0.9 : inCrisis ? 0.95 : 0.92;
+  sheep.vy *= inPen ? 0.9 : inCrisis ? 0.95 : 0.92;
+
+  // Keep captured sheep inside pen (soft interior, no fence hugging)
+  if (inPen) {
+    const pdx = sheep.x - PEN.cx;
+    const pdy = sheep.y - PEN.cy;
+    const pd = Math.sqrt(pdx * pdx + pdy * pdy);
+    const maxR = PEN.radius * SHEEP.penInside.penClampRadius;
+    if (pd > maxR && pd > 1e-6) {
+      sheep.x = PEN.cx + (pdx / pd) * maxR;
+      sheep.y = PEN.cy + (pdy / pd) * maxR;
+      const radial = (sheep.vx * pdx + sheep.vy * pdy) / pd;
+      if (radial > 0) {
+        sheep.vx -= (pdx / pd) * radial * 0.62;
+        sheep.vy -= (pdy / pd) * radial * 0.62;
+      }
+    }
+  }
 
   // Hard clamp to table circle
   const dx = sheep.x - 0.5;
@@ -391,8 +628,23 @@ function drawSheep(p, sheep, canvasSize) {
   const inCrisis = sheep.stress >= SHEEP.crisisThreshold;
   const stressRatio = Math.min(sheep.stress / SHEEP.crisisThreshold, 1);
 
+  const grazingLocked =
+    sheep.stationaryGrazer &&
+    !sheep.grazerUnlocked &&
+    !sheep.captured &&
+    sheep.stress < SHEEP.crisisThreshold;
+
   p.push();
   p.translate(px, py);
+
+  // Idle graze: subtle bob + lean (eating / looking down)
+  if (grazingLocked) {
+    const gt = sheep._tick * 0.088 + sheep.wanderPhase + sheep.id * 0.37;
+    const bob = Math.sin(gt) * r * 0.15;
+    const lean = Math.sin(gt * 1.71) * 0.12;
+    p.translate(0, bob);
+    p.rotate(lean * 0.22);
+  }
 
   // Crisis shake
   if (inCrisis) {

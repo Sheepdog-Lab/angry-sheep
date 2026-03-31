@@ -8,9 +8,15 @@ import {
   SHEEPDOG_TEXTURE_URL,
   BLOCKS_TEXTURE_URL,
   GRASS_TEXTURE_URL,
+  PEN_TEXTURE_URL,
+  VICTORY_S1_URL,
+  VICTORY_S2_URL,
+  VICTORY_S3_URL,
+  VICTORY_BANNER_URL,
+  TERRAIN_GRASS_CLUMP_URL,
 } from './config.js';
 import * as Input from './input.js';
-import { drawPen } from './pen.js';
+import { drawPen, setPenSprite } from './pen.js';
 import { drawTools, setGrassSprite, setSheepdogSprite, setBlockSprite } from './tools.js';
 import { updateFlock, drawFlock, setSheepSprite, getFlock } from './sheep.js';
 import * as Session from './session.js';
@@ -18,6 +24,13 @@ import { initTuning } from './tuning.js';
 import { connectMarkerStream } from './markerStream.js';
 import { drawMarkerOverlay } from './markerOverlay.js';
 import { initCameraSwitcher } from './cameraSelect.js';
+import { stripVictoryShepherdBackdrop } from './victoryShepherdBackdrop.js';
+import {
+  setTerrainGrassImage,
+  initTerrainAmbientGrass,
+  drawTerrainAmbientGrass,
+  updateGrassSheepInteraction,
+} from './terrainGrass.js';
 import './browserFramePump.js';
 
 initCameraSwitcher().catch((e) => console.warn('[camera] init:', e));
@@ -34,6 +47,18 @@ new p5((p) => {
   let grassImg = null;
   /** @type {import('p5').Image | null} */
   let blockImg = null;
+  /** @type {import('p5').Image | null} */
+  let penImg = null;
+  /** @type {import('p5').Image | null} */
+  let victoryS1Img = null;
+  /** @type {import('p5').Image | null} */
+  let victoryS2Img = null;
+  /** @type {import('p5').Image | null} */
+  let victoryS3Img = null;
+  /** @type {import('p5').Image | null} */
+  let victoryBannerImg = null;
+  /** @type {import('p5').Image | null} */
+  let terrainGrassClumpImg = null;
 
   p.preload = () => {
     terrainImg = p.loadImage(TERRAIN_TEXTURE_URL);
@@ -41,6 +66,12 @@ new p5((p) => {
     sheepdogImg = p.loadImage(SHEEPDOG_TEXTURE_URL);
     grassImg = p.loadImage(GRASS_TEXTURE_URL);
     blockImg = p.loadImage(BLOCKS_TEXTURE_URL);
+    penImg = p.loadImage(PEN_TEXTURE_URL);
+    victoryS1Img = p.loadImage(VICTORY_S1_URL);
+    victoryS2Img = p.loadImage(VICTORY_S2_URL);
+    victoryS3Img = p.loadImage(VICTORY_S3_URL);
+    victoryBannerImg = p.loadImage(VICTORY_BANNER_URL);
+    terrainGrassClumpImg = p.loadImage(TERRAIN_GRASS_CLUMP_URL);
   };
 
   p.setup = () => {
@@ -50,7 +81,18 @@ new p5((p) => {
     setSheepdogSprite(sheepdogImg);
     setGrassSprite(grassImg);
     setBlockSprite(blockImg);
-    Session.startSession(p);
+    setPenSprite(penImg);
+    stripVictoryShepherdBackdrop(victoryBannerImg);
+    Session.setVictoryCelebrationSprites({
+      s1: victoryS1Img,
+      s2: victoryS2Img,
+      s3: victoryS3Img,
+      banner: victoryBannerImg,
+    });
+    Session.startSession();
+    setTerrainGrassImage(terrainGrassClumpImg);
+    initTerrainAmbientGrass(canvasSize);
+    Input.init(p, canvasSize);
     initTuning();
     connectMarkerStream();
   };
@@ -83,17 +125,27 @@ new p5((p) => {
       p.background(CANVAS_BG_COLOR);
     }
 
+    updateGrassSheepInteraction(
+      getFlock(),
+      canvasSize,
+      phase === 'playing',
+      p.frameCount,
+    );
+    drawTerrainAmbientGrass(p, canvasSize);
+
     // Pen (always visible)
     drawPen(p, canvasSize);
 
-    // Sheep and tools (visible during intro fade-in, playing, and outro)
-    if (phase !== 'reset') {
+    // Sheep and tools (hidden on win — victory uses its own character sprites)
+    if (phase !== 'reset' && phase !== 'win') {
       drawFlock(p, canvasSize);
       drawTools(p, state.tools, canvasSize, Input.getHoveredId(), getFlock());
     }
 
-    // Physical ArUco markers from server.py (camera → WebSocket)
-    drawMarkerOverlay(p, canvasSize);
+    // Physical ArUco markers (hidden during win celebration for a cleaner scene)
+    if (phase !== 'win') {
+      drawMarkerOverlay(p, canvasSize);
+    }
 
     // Black mask
     const ctx = p.drawingContext;
@@ -128,5 +180,6 @@ new p5((p) => {
     canvasSize = Math.min(p.windowWidth, p.windowHeight);
     p.resizeCanvas(canvasSize, canvasSize);
     Input.updateCanvasSize(canvasSize);
+    initTerrainAmbientGrass(canvasSize);
   };
 });

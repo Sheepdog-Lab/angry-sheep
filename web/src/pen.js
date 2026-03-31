@@ -1,7 +1,17 @@
 import { PEN } from './config.js';
 
+/** @type {import('p5').Image | null} */
+let penSprite = null;
+
 /**
- * Draw the pen/corral — a circle with multiple openings (gaps in the arc).
+ * @param {import('p5').Image | null} img
+ */
+export function setPenSprite(img) {
+  penSprite = img;
+}
+
+/**
+ * Draw the pen/corral — PNG sprite when loaded, else procedural circle + gaps.
  */
 export function drawPen(p, canvasSize) {
   const s = canvasSize;
@@ -15,13 +25,26 @@ export function drawPen(p, canvasSize) {
   p.fill(PEN.fillColor + '30');
   p.ellipse(cx, cy, r * 2);
 
-  // Draw arc segments between the gaps
+  if (penSprite && penSprite.width > 0) {
+    p.push();
+    p.imageMode(p.CENTER);
+    const iw = penSprite.width;
+    const ih = penSprite.height;
+    const maxDim = r * 2 * 0.98;
+    const scale = maxDim / Math.max(iw, ih);
+    const w = iw * scale;
+    const h = ih * scale;
+    p.image(penSprite, cx, cy, w, h);
+    p.pop();
+    return;
+  }
+
+  // Fallback: arc segments between the gaps
   p.noFill();
   p.stroke(PEN.strokeColor);
   p.strokeWeight(sw);
   p.strokeCap(p.ROUND);
 
-  // Collect all gap edges as sorted angles, then draw the solid arcs between them
   const wallSegments = getWallSegments(PEN.gaps);
 
   for (const [startDeg, endDeg] of wallSegments) {

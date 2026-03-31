@@ -12,7 +12,7 @@ const CATEGORIES = [
     name: 'Sheep',
     color: '#f0f0e8',
     params: [
-      { key: 'count',          label: 'Count',          min: 1,      max: 15,    step: 1,      respawn: true },
+      { key: 'count',          label: 'Count',          min: 1,      max: 22,    step: 1,      respawn: true },
       { key: 'speed',          label: 'Speed',          min: 0.0002, max: 0.005, step: 0.0001 },
       { key: 'radius',         label: 'Size',           min: 0.008,  max: 0.04,  step: 0.001  },
       { key: 'stressPerPush',  label: 'Anger per push', min: 0.05,   max: 1.0,   step: 0.05   },
