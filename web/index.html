@@ -8,13 +8,92 @@
       margin: 0;
       padding: 0;
       overflow: hidden;
-      background: #1a1a1a;
-      display: flex;
-      justify-content: center;
-      align-items: center;
       height: 100vh;
+      width: 100vw;
+      background: #050805;
     }
-    canvas { display: block; }
+    body {
+      position: relative;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .fullscreen-app {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+    }
+    .game-stage {
+      position: relative;
+      width: min(100vw, 100vh);
+      height: min(100vw, 100vh);
+      max-width: 100vw;
+      max-height: 100vh;
+      overflow: hidden;
+    }
+    body.is-fullscreen .game-stage {
+      width: min(1080px, 100vh, 100vw);
+      height: min(1080px, 100vh, 100vw);
+    }
+    .fullscreen-launch,
+    .fullscreen-exit {
+      border: 0;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.9);
+      color: #0c160a;
+      cursor: pointer;
+      box-shadow: 0 16px 42px rgba(0, 0, 0, 0.45);
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+    .fullscreen-launch {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 10001;
+      width: 148px;
+      height: 148px;
+      padding: 16px;
+      font-size: 1.4rem;
+      line-height: 1.05;
+      text-transform: uppercase;
+    }
+    .fullscreen-launch:hover,
+    .fullscreen-exit:hover {
+      background: #ffffff;
+    }
+    .fullscreen-launch:focus-visible,
+    .fullscreen-exit:focus-visible,
+    .camera-panel-toggle:focus-visible,
+    #cameraSelect:focus-visible {
+      outline: 3px solid #8ab4ff;
+      outline-offset: 3px;
+    }
+    .fullscreen-exit {
+      display: none;
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      z-index: 5;
+      min-width: 140px;
+      min-height: 64px;
+      padding: 14px 18px;
+      font-size: 1rem;
+      text-transform: uppercase;
+    }
+    .fullscreen-app:fullscreen .fullscreen-exit,
+    .fullscreen-app:-webkit-full-screen .fullscreen-exit {
+      display: block;
+    }
+    body.is-fullscreen .fullscreen-launch {
+      display: none;
+    }
     .camera-panel {
       position: fixed;
       top: 8px;
@@ -62,10 +141,6 @@
       background: #3a3a3a;
       border-color: #666;
     }
-    .camera-panel-toggle:focus-visible {
-      outline: 2px solid #8ab4ff;
-      outline-offset: 2px;
-    }
     .camera-panel--collapsed .camera-panel-toggle {
       margin-left: auto;
     }
@@ -95,6 +170,28 @@
   </style>
 </head>
 <body>
+  <button
+    type="button"
+    id="enterFullscreenButton"
+    class="fullscreen-launch"
+    aria-controls="fullscreenApp"
+    title="Expand the game to full screen"
+  >
+    Full
+    <br />
+    Screen
+  </button>
+  <div id="fullscreenApp" class="fullscreen-app">
+    <div id="gameStage" class="game-stage" aria-label="Angry Sheep game area"></div>
+    <button
+      type="button"
+      id="exitFullscreenButton"
+      class="fullscreen-exit"
+      title="Exit full screen"
+    >
+      Exit Full Screen
+    </button>
+  </div>
   <div class="camera-panel" id="cameraPanel" aria-label="Camera preview">
     <div class="camera-panel-header">
       <span class="camera-panel-title">Camera</span>

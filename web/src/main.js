@@ -24,6 +24,7 @@ import { initTuning } from './tuning.js';
 import { connectMarkerStream } from './markerStream.js';
 import { drawMarkerOverlay } from './markerOverlay.js';
 import { initCameraSwitcher } from './cameraSelect.js';
+import { getGameStageSize, initFullscreenControls } from './fullscreen.js';
 import { stripVictoryShepherdBackdrop } from './victoryShepherdBackdrop.js';
 import {
   setTerrainGrassImage,
@@ -35,8 +36,14 @@ import './browserFramePump.js';
 
 initCameraSwitcher().catch((e) => console.warn('[camera] init:', e));
 
+let notifyViewportChange = () => {};
+initFullscreenControls(() => {
+  notifyViewportChange();
+});
+
 new p5((p) => {
   let canvasSize;
+  let canvasEl = null;
   /** @type {import('p5').Image | null} */
   let terrainImg = null;
   /** @type {import('p5').Image | null} */
@@ -75,8 +82,9 @@ new p5((p) => {
   };
 
   p.setup = () => {
-    canvasSize = Math.min(p.windowWidth, p.windowHeight);
-    p.createCanvas(canvasSize, canvasSize);
+    canvasSize = getGameStageSize();
+    canvasEl = p.createCanvas(canvasSize, canvasSize);
+    canvasEl.parent('gameStage');
     setSheepSprite(sheepImg);
     setSheepdogSprite(sheepdogImg);
     setGrassSprite(grassImg);
@@ -95,6 +103,15 @@ new p5((p) => {
     Input.init(p, canvasSize);
     initTuning();
     connectMarkerStream();
+
+    notifyViewportChange = () => {
+      const nextSize = getGameStageSize();
+      if (nextSize === canvasSize) return;
+      canvasSize = nextSize;
+      p.resizeCanvas(canvasSize, canvasSize);
+      Input.updateCanvasSize(canvasSize);
+      initTerrainAmbientGrass(canvasSize);
+    };
   };
 
   p.draw = () => {
@@ -177,9 +194,6 @@ new p5((p) => {
   };
 
   p.windowResized = () => {
-    canvasSize = Math.min(p.windowWidth, p.windowHeight);
-    p.resizeCanvas(canvasSize, canvasSize);
-    Input.updateCanvasSize(canvasSize);
-    initTerrainAmbientGrass(canvasSize);
+    notifyViewportChange();
   };
 });

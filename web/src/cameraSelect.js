@@ -121,6 +121,14 @@ function populateSelect(select, videoInputs) {
 }
 
 export async function initCameraSwitcher() {
+  window.addEventListener(
+    'pagehide',
+    () => {
+      stopCurrentStream();
+    },
+    { capture: true },
+  );
+
   initCameraPanelToggle();
 
   const select = getSelectEl();
@@ -141,8 +149,9 @@ export async function initCameraSwitcher() {
   video.setAttribute('muted', '');
   video.muted = true;
 
+  let permissionStream = null;
   try {
-    await navigator.mediaDevices.getUserMedia({ video: true });
+    permissionStream = await navigator.mediaDevices.getUserMedia({ video: true });
   } catch (e) {
     console.warn('[camera] permission denied:', e);
     select.innerHTML = '';
@@ -155,6 +164,10 @@ export async function initCameraSwitcher() {
   }
 
   const devices = await navigator.mediaDevices.enumerateDevices();
+  if (permissionStream) {
+    permissionStream.getTracks().forEach((t) => t.stop());
+    permissionStream = null;
+  }
   const videoInputs = devices.filter((d) => d.kind === 'videoinput');
 
   if (videoInputs.length === 0) {
