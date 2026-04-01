@@ -6,6 +6,7 @@ let panel = null;
 let visible = false;
 let sliders = {};       // key → { slider, valueSpan, param }
 let presetList = null;
+let DEFAULT_SNAPSHOT = null;
 
 const CATEGORIES = [
   {
@@ -94,6 +95,9 @@ function savePresets(presets) {
 // -- Init --
 
 export function initTuning() {
+  // Capture hardcoded defaults before any user changes
+  DEFAULT_SNAPSHOT = snapshot();
+
   // Toggle button
   const toggle = document.createElement('button');
   toggle.textContent = 'Tune';
@@ -149,6 +153,19 @@ export function initTuning() {
   });
   presetHeader.textContent = 'Presets';
   panel.appendChild(presetHeader);
+
+  // Reset to defaults button
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = 'Reset to defaults';
+  Object.assign(resetBtn.style, {
+    width: '100%', padding: '5px', marginBottom: '6px',
+    background: 'transparent', color: '#aaa', border: '1px solid #666',
+    borderRadius: '3px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '11px',
+  });
+  resetBtn.addEventListener('click', () => {
+    if (DEFAULT_SNAPSHOT) applySnapshot(DEFAULT_SNAPSHOT);
+  });
+  panel.appendChild(resetBtn);
 
   // Save button
   const saveBtn = document.createElement('button');

@@ -128,7 +128,7 @@ export const TOOL_COLORS = {
 export const TOOL_SIZES = {
   block: { w: 0.07, h: 0.025 },
   sheepdog: 0.03,
-  grass: 0.022,
+  grass: 0.02,
 };
 
 export const TOOL_HIT_RADIUS = 0.035;
@@ -139,6 +139,13 @@ export const INITIAL_TOOLS = [
   { type: 'block',    x: 0.25, y: 0.30, angle_deg: 0 },
   { type: 'block',    x: 0.72, y: 0.65, angle_deg: 45 },
   { type: 'block',    x: 0.35, y: 0.72, angle_deg: 90 },
+  { type: 'block',    x: 0.78, y: 0.35, angle_deg: 30 },
+  { type: 'block',    x: 0.22, y: 0.68, angle_deg: 60 },
+  { type: 'block',    x: 0.60, y: 0.78, angle_deg: 15 },
+  { type: 'block',    x: 0.40, y: 0.22, angle_deg: 120 },
+  { type: 'block',    x: 0.18, y: 0.42, angle_deg: 75 },
+  { type: 'block',    x: 0.80, y: 0.50, angle_deg: 135 },
+  { type: 'block',    x: 0.55, y: 0.20, angle_deg: 160 },
   { type: 'sheepdog', x: 0.65, y: 0.25, angle_deg: 180 },
   { type: 'sheepdog', x: 0.30, y: 0.55, angle_deg: 0 },
   { type: 'grass',    x: 0.70, y: 0.45, angle_deg: 0 },
@@ -147,11 +154,11 @@ export const INITIAL_TOOLS = [
 
 // -- Sheep --
 export const SHEEP = {
-  count: 10,
-  radius: 0.025,            // body size (normalized)
+  count: 12,
+  radius: 0.022,            // body size (normalized)
   color: '#f0f0e8',
   eyeColor: '#222222',
-  speed: 0.0012,            // base wander speed per frame
+  speed: 0.0016,            // base wander speed per frame
   wanderJitter: 0.3,        // how much the wander angle drifts per frame
   /** ~fraction of flock that stays grazing until woken by interaction */
   grazerFraction: 0.25,
@@ -210,10 +217,18 @@ export const SHEEP = {
     /** Soft preferred band: extra center bias beyond this normalized radius. */
     penWanderRadius: 0.52,
   },
+  // Pen avoidance & fence collision
+  penAvoidRadius: 0.18,     // free sheep start avoiding pen at this distance from center
+  penAvoidForce: 0.0015,    // mild outward nudge (weaker than tool forces)
+  crisisPenEscapeForce: 0.006, // strong outward push for mad sheep inside pen
+  penFenceThickness: 0.018, // collision activation zone around pen edge
+  penFenceBounceForce: 0.005, // outward push at wall segments
+  // Block drag anger
+  blockDragStressRate: 0.015, // stress per frame when a dragged block is near
   // Stress & crisis
-  stressPerPush: 0.35,      // stress added per sheepdog encounter
+  stressPerPush: 0.15,      // stress added per sheepdog encounter
   crisisThreshold: 1.0,     // stress level that triggers crisis mode
-  crisisSpeedMult: 1.8,     // speed multiplier during crisis
+  crisisSpeedMult: 2.7,     // speed multiplier during crisis
   crisisWanderJitter: 0.8,  // erratic movement jitter during crisis
   // De-escalation
   grassCalmRate: 0.008,     // stress reduction per frame when grass is near a crisis sheep

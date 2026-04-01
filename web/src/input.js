@@ -30,6 +30,10 @@ export function getHoveredId() {
   return hoveredId;
 }
 
+export function getDragId() {
+  return dragId;
+}
+
 export function init(p, size) {
   p5Ref = p;
   canvasSize = size;

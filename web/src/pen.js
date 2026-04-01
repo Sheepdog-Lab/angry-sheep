@@ -113,3 +113,33 @@ export function isInsidePen(nx, ny) {
   const dy = ny - PEN.cy;
   return Math.sqrt(dx * dx + dy * dy) <= PEN.radius;
 }
+
+/**
+ * Check whether an angle (degrees, 0–360) falls within one of the pen gaps.
+ */
+export function isInGap(angleDeg) {
+  const a = ((angleDeg % 360) + 360) % 360;
+  for (const [gs, ge] of PEN.gaps) {
+    const s = ((gs % 360) + 360) % 360;
+    const e = ((ge % 360) + 360) % 360;
+    if (s > e) {
+      // Wraps around 0° (e.g. 350→10)
+      if (a >= s || a <= e) return true;
+    } else {
+      if (a >= s && a <= e) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Return distance and angle info for a point relative to the pen center.
+ */
+export function penEdgeInfo(nx, ny) {
+  const dx = nx - PEN.cx;
+  const dy = ny - PEN.cy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const angleRad = Math.atan2(dy, dx);
+  const angleDeg = ((angleRad * 180 / Math.PI) + 360) % 360;
+  return { dist, angleDeg, inside: dist <= PEN.radius };
+}

@@ -1,5 +1,6 @@
 import { SHEEP, TABLE_RADIUS, PEN } from './config.js';
-import { isInsidePen } from './pen.js';
+import { isInsidePen, isInGap, penEdgeInfo } from './pen.js';
+import { getDragId } from './input.js';
 
 // -- Flock state --
 let flock = [];
@@ -61,6 +62,8 @@ export function updateFlock(input) {
     applySeparation(sheep);
     applyEdgeBounce(sheep);
     applyToolReactions(sheep, tools);
+    applyCrisisPenEscape(sheep);
+    applyPenFenceCollision(sheep);
     applyDeescalation(sheep, tools, voice, pet);
     applyStressTracking(sheep, tools);
     applyPenCapture(sheep);
@@ -392,6 +395,95 @@ function applyEdgeBounce(sheep) {
   }
 }
 
+/** Angry sheep actively flee the pen — slide along walls until finding a gap.
+ *  Triggers at half crisis threshold (agitated) with weaker force, full force at crisis. */
+function applyCrisisPenEscape(sheep) {
+  if (sheep.captured) return;
+  const halfThresh = SHEEP.crisisThreshold * 0.7;
+  if (sheep.stress < halfThresh) return;
+  const info = penEdgeInfo(sheep.x, sheep.y);
+  if (info.dist >= PEN.radius + SHEEP.penFenceThickness) return;
+  // Scale force: half at 50% stress, full at crisis threshold
+  const t = Math.min((sheep.stress - halfThresh) / halfThresh, 1);
+  const force = SHEEP.crisisPenEscapeForce * (0.5 + 0.5 * t);
+  // Push outward from pen center
+  const dx = sheep.x - PEN.cx;
+  const dy = sheep.y - PEN.cy;
+  const d = info.dist < 1e-6 ? 1e-6 : info.dist;
+  const ux = dx / d;
+  const uy = dy / d;
+  sheep.vx += ux * force;
+  sheep.vy += uy * force;
+  // Redirect wander angle outward
+  sheep.wanderAngle = Math.atan2(uy, ux) + (Math.random() - 0.5) * 0.4;
+}
+
+/** Free sheep mildly avoid pen area so they don't wander in accidentally. */
+function applyPenAvoidance(sheep) {
+  if (sheep.captured) return;
+  if (sheep.stress >= SHEEP.crisisThreshold) return;
+  const dx = sheep.x - PEN.cx;
+  const dy = sheep.y - PEN.cy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist >= SHEEP.penAvoidRadius || dist < 1e-6) return;
+  // Ramp force up as sheep gets closer to pen center
+  const t = 1 - dist / SHEEP.penAvoidRadius;
+  const force = SHEEP.penAvoidForce * t * t;
+  const ux = dx / dist;
+  const uy = dy / dist;
+  sheep.vx += ux * force;
+  sheep.vy += uy * force;
+}
+
+/** Pen fence blocks sheep at wall segments; gaps allow passage. */
+function applyPenFenceCollision(sheep) {
+  if (sheep.captured) return;
+  const info = penEdgeInfo(sheep.x, sheep.y);
+  const thickness = SHEEP.penFenceThickness;
+  const distFromEdge = Math.abs(info.dist - PEN.radius);
+  // Only activate near the fence edge
+  if (distFromEdge > thickness) return;
+  // If at a gap, allow free passage
+  if (isInGap(info.angleDeg)) return;
+  // At a wall — push outward / inward based on which side we're on
+  const dx = sheep.x - PEN.cx;
+  const dy = sheep.y - PEN.cy;
+  const d = info.dist < 1e-6 ? 1e-6 : info.dist;
+  const ux = dx / d;
+  const uy = dy / d;
+  // Determine push direction: outward if approaching from outside, inward if from inside
+  // For non-captured sheep approaching from outside (most common), push outward
+  const pushDir = info.dist >= PEN.radius ? 1 : -1;
+  sheep.vx += ux * SHEEP.penFenceBounceForce * pushDir;
+  sheep.vy += uy * SHEEP.penFenceBounceForce * pushDir;
+  // Clamp position to just outside/inside the fence
+  if (info.dist >= PEN.radius) {
+    const pushR = PEN.radius + thickness * 0.5;
+    if (info.dist < pushR) {
+      sheep.x = PEN.cx + ux * pushR;
+      sheep.y = PEN.cy + uy * pushR;
+    }
+  } else {
+    const pushR = PEN.radius - thickness * 0.5;
+    if (info.dist > pushR) {
+      sheep.x = PEN.cx + ux * pushR;
+      sheep.y = PEN.cy + uy * pushR;
+    }
+  }
+  // Deflect wander angle to be tangential (slide along wall)
+  const tangent = Math.atan2(uy, ux) + Math.PI / 2;
+  const diff = sheep.wanderAngle - tangent;
+  if (Math.abs(diff) > Math.PI / 2) {
+    sheep.wanderAngle = tangent + (diff > 0 ? Math.PI / 2 : -Math.PI / 2);
+  }
+  // Dampen radial velocity component
+  const radial = sheep.vx * ux + sheep.vy * uy;
+  if ((pushDir > 0 && radial < 0) || (pushDir < 0 && radial > 0)) {
+    sheep.vx -= ux * radial * 0.7;
+    sheep.vy -= uy * radial * 0.7;
+  }
+}
+
 function applyToolReactions(sheep, tools) {
   let nearbyBlocks = 0;
   let nearGrass = false;
@@ -447,6 +539,14 @@ function applyToolReactions(sheep, tools) {
       const force = SHEEP.blockRepelForce / Math.max(dist, 0.01);
       sheep.vx += (dx / dist) * force;
       sheep.vy += (dy / dist) * force;
+
+      // Actively dragged block angers the sheep
+      if (tool.id === getDragId()) {
+        sheep.stress = Math.min(
+          sheep.stress + SHEEP.blockDragStressRate,
+          SHEEP.crisisThreshold + 0.5,
+        );
+      }
 
       const awayAngle = Math.atan2(dy, dx);
       let wanderDiff = sheep.wanderAngle - awayAngle;
