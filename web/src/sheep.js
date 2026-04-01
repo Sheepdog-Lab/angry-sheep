@@ -1,6 +1,7 @@
 import { SHEEP, TABLE_RADIUS, PEN } from './config.js';
 import { isInsidePen, isInGap, penEdgeInfo } from './pen.js';
 import { getDragId } from './input.js';
+import { playSfx } from './sound.js';
 
 // -- Flock state --
 let flock = [];
@@ -30,6 +31,10 @@ export function spawnFlock(count = SHEEP.count) {
 
 export function getFlock() {
   return flock;
+}
+
+export function isAnySheepEating() {
+  return flock.some((s) => s._isEating);
 }
 
 /**
@@ -487,6 +492,7 @@ function applyPenFenceCollision(sheep) {
 function applyToolReactions(sheep, tools) {
   let nearbyBlocks = 0;
   let nearGrass = false;
+  let eatingGrass = false;
   const inCrisis = sheep.stress >= SHEEP.crisisThreshold;
 
   for (const tool of tools) {
@@ -529,6 +535,7 @@ function applyToolReactions(sheep, tools) {
         }
         // Fill up quickly when close
         if (dist < SHEEP.grassAttractRadius * 0.5) {
+          eatingGrass = true;
           sheep.grazeFullness = Math.min(1, sheep.grazeFullness + SHEEP.grazeFillRate);
         }
       }
@@ -563,6 +570,8 @@ function applyToolReactions(sheep, tools) {
     sheep.vx *= damping;
     sheep.vy *= damping;
   }
+
+  sheep._isEating = eatingGrass;
 
   // Digest when not near any grass
   if (!nearGrass) {
@@ -609,6 +618,10 @@ function applyDeescalation(sheep, tools, voice, pet) {
 function applyStressTracking(sheep, tools) {
   // Track crisis duration for hint system
   if (sheep.stress >= SHEEP.crisisThreshold) {
+    // Play mad sheep SFX on first frame of crisis
+    if (sheep._crisisFrames === 0) {
+      playSfx('madSheep');
+    }
     sheep._crisisFrames++;
   } else {
     sheep._crisisFrames = 0;
@@ -641,6 +654,7 @@ function applyPenCapture(sheep) {
     sheep.penFrames++;
     if (sheep.penFrames >= SHEEP.captureSettleTime) {
       sheep.captured = true;
+      playSfx('smallWin');
     }
   } else {
     sheep.penFrames = Math.max(0, sheep.penFrames - 2);

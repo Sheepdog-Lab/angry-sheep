@@ -1,5 +1,6 @@
 import { SESSION, TABLE_RADIUS, SHEEP as SHEEP_CFG } from './config.js';
 import { spawnFlock, getFlock } from './sheep.js';
+import { playSfx } from './sound.js';
 
 // States: 'intro' → 'playing' → 'win' | 'timeout' → 'reset' → 'intro'
 let phase = 'intro';
@@ -32,6 +33,10 @@ export function getPhase() {
   return phase;
 }
 
+export function getFrameCounter() {
+  return frameCounter;
+}
+
 export function getTimerSeconds() {
   const elapsed = timerFrames / 60;
   return Math.max(0, SESSION.timerSeconds - elapsed);
@@ -61,6 +66,8 @@ export function update() {
     if (allCaptured) {
       phase = 'win';
       frameCounter = 0;
+      playSfx('kidsLaugh');
+      playSfx('bigWin');
       return;
     }
 
@@ -68,6 +75,8 @@ export function update() {
     if (timerFrames >= SESSION.timerSeconds * 60) {
       phase = 'timeout';
       frameCounter = 0;
+      playSfx('gameOver');
+      playSfx('lose');
     }
   } else if (phase === 'win' || phase === 'timeout') {
     if (frameCounter >= SESSION.outroDuration) {

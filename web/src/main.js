@@ -14,11 +14,12 @@ import {
   VICTORY_S3_URL,
   VICTORY_BANNER_URL,
   TERRAIN_GRASS_CLUMP_URL,
+  SESSION,
 } from './config.js';
 import * as Input from './input.js';
 import { drawPen, setPenSprite } from './pen.js';
 import { drawTools, setGrassSprite, setSheepdogSprite, setBlockSprite } from './tools.js';
-import { updateFlock, drawFlock, setSheepSprite, getFlock } from './sheep.js';
+import { updateFlock, drawFlock, setSheepSprite, getFlock, isAnySheepEating } from './sheep.js';
 import * as Session from './session.js';
 import { initTuning } from './tuning.js';
 import { connectMarkerStream } from './markerStream.js';
@@ -32,6 +33,7 @@ import {
   drawTerrainAmbientGrass,
   updateGrassSheepInteraction,
 } from './terrainGrass.js';
+import { initSoundPanel, fadeAudio, setEatGrassActive } from './sound.js';
 import './browserFramePump.js';
 
 initCameraSwitcher().catch((e) => console.warn('[camera] init:', e));
@@ -102,6 +104,7 @@ new p5((p) => {
     initTerrainAmbientGrass(canvasSize);
     Input.init(p, canvasSize);
     initTuning();
+    initSoundPanel();
     connectMarkerStream();
 
     notifyViewportChange = () => {
@@ -122,9 +125,24 @@ new p5((p) => {
     // Update session state machine
     Session.update();
 
+    // Background audio fades in/out with the scene
+    const fc = Session.getFrameCounter();
+    if (phase === 'intro') {
+      fadeAudio(Math.min(1, (fc / SESSION.introDuration) * 2));
+    } else if (phase === 'playing') {
+      fadeAudio(1);
+    } else if (phase === 'reset') {
+      fadeAudio(Math.max(0, 1 - fc / SESSION.resetPause));
+    } else {
+      fadeAudio(1);
+    }
+
     // Only run sheep sim during playing phase
     if (phase === 'playing') {
       updateFlock(state);
+      setEatGrassActive(isAnySheepEating());
+    } else {
+      setEatGrassActive(false);
     }
 
     // -- Render --

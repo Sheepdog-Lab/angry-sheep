@@ -154,7 +154,7 @@ export const INITIAL_TOOLS = [
 
 // -- Sheep --
 export const SHEEP = {
-  count: 12,
+  count: 8,
   radius: 0.022,            // body size (normalized)
   color: '#f0f0e8',
   eyeColor: '#222222',

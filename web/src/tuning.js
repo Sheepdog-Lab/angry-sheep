@@ -107,9 +107,17 @@ export function initTuning() {
     border: '1px solid #666', borderRadius: '4px', cursor: 'pointer',
     fontFamily: 'monospace', fontSize: '13px',
   });
-  toggle.addEventListener('click', () => {
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
     visible = !visible;
     panel.style.display = visible ? 'block' : 'none';
+    if (visible) document.dispatchEvent(new CustomEvent('panel-open', { detail: 'tune' }));
+  });
+  document.addEventListener('panel-open', (e) => {
+    if (e.detail !== 'tune' && visible) {
+      visible = false;
+      panel.style.display = 'none';
+    }
   });
   document.body.appendChild(toggle);
 
@@ -194,6 +202,14 @@ export function initTuning() {
   presetList = document.createElement('div');
   panel.appendChild(presetList);
   renderPresetList();
+
+  panel.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => {
+    if (visible) {
+      visible = false;
+      panel.style.display = 'none';
+    }
+  });
 
   document.body.appendChild(panel);
 }
