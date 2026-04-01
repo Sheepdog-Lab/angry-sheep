@@ -1,8 +1,9 @@
 // -- Background audio + SFX manager with per-track volume control --
 
 const TRACKS = [
-  { id: 'farm',  label: 'Farm ambience',   src: '/farm-sound.mp3',  defaultVol: 1.0  },
+  { id: 'farm',  label: 'Farm ambience',   src: '/farm-sound.mp3',  defaultVol: 1.0, gain: 2.0 },
   { id: 'grass', label: 'Grass rustling',   src: '/grass-rustled.mp3', defaultVol: 0.10 },
+  { id: 'kids',  label: 'Kids music',       src: '/bg-kids-music.mp3', defaultVol: 0.05 },
 ];
 
 const SFX_DEFS = [
@@ -64,6 +65,9 @@ function saveSettings() {
 
 // -- Audio lifecycle --
 
+/** Shared AudioContext for tracks that need gain > 1. */
+let audioCtx = null;
+
 function initPlayers() {
   const saved = loadSettings();
   muted = saved.muted ?? false;
@@ -74,8 +78,22 @@ function initPlayers() {
     audio.preload = 'auto';
     const volume = saved[track.id] ?? track.defaultVol;
     const trackMuted = saved[track.id + '_m'] ?? false;
-    audio.volume = (muted || trackMuted) ? 0 : volume;
-    players.set(track.id, { audio, volume, muted: trackMuted });
+
+    let gainNode = null;
+    const maxGain = track.gain ?? 1.0;
+    if (maxGain > 1.0) {
+      // Route through Web Audio GainNode to amplify beyond 1.0
+      if (!audioCtx) audioCtx = new AudioContext();
+      const source = audioCtx.createMediaElementSource(audio);
+      gainNode = audioCtx.createGain();
+      source.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      audio.volume = 1; // volume is controlled via gainNode instead
+    } else {
+      audio.volume = (muted || trackMuted) ? 0 : volume;
+    }
+
+    players.set(track.id, { audio, volume, muted: trackMuted, gainNode, maxGain });
   }
 
   for (const def of SFX_DEFS) {
@@ -103,7 +121,13 @@ let fadeMul = 0;
 
 function applyVolumes() {
   for (const [, p] of players) {
-    p.audio.volume = (muted || p.muted) ? 0 : p.volume * fadeMul;
+    const vol = (muted || p.muted) ? 0 : p.volume * fadeMul;
+    if (p.gainNode) {
+      // GainNode controls volume; audio.volume stays at 1
+      p.gainNode.gain.value = vol * p.maxGain;
+    } else {
+      p.audio.volume = vol;
+    }
   }
 }
 
@@ -116,6 +140,7 @@ export function fadeAudio(t) {
 
   if (fadeMul > 0 && !playing) {
     playing = true;
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     for (const [, p] of players) {
       p.audio.play().catch(() => {});
     }
@@ -123,13 +148,8 @@ export function fadeAudio(t) {
 
   applyVolumes();
 
-  if (fadeMul === 0 && playing) {
-    playing = false;
-    for (const [, p] of players) {
-      p.audio.pause();
-      p.audio.currentTime = 0;
-    }
-  }
+  // Keep tracks playing at volume 0 instead of pausing, so they resume
+  // reliably without needing a fresh user gesture (browser autoplay policy).
 }
 
 // -- Eat-grass loop --
@@ -318,10 +338,23 @@ export function initSoundPanel() {
         saveSettings();
       },
       onTest(vol) {
-        const a = new Audio(track.src);
-        a.volume = vol;
-        a.play().catch(() => {});
-        setTimeout(() => { a.pause(); a.currentTime = 0; }, 3000);
+        const maxGain = track.gain ?? 1.0;
+        if (maxGain > 1.0 && audioCtx) {
+          const a = new Audio(track.src);
+          a.volume = 1;
+          const src = audioCtx.createMediaElementSource(a);
+          const g = audioCtx.createGain();
+          g.gain.value = vol * maxGain;
+          src.connect(g);
+          g.connect(audioCtx.destination);
+          a.play().catch(() => {});
+          setTimeout(() => { a.pause(); a.currentTime = 0; }, 3000);
+        } else {
+          const a = new Audio(track.src);
+          a.volume = vol;
+          a.play().catch(() => {});
+          setTimeout(() => { a.pause(); a.currentTime = 0; }, 3000);
+        }
       },
     });
     uiRows.push({ setVolume, setMuted });
