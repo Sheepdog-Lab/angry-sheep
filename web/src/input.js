@@ -56,6 +56,12 @@ export function init(p, size) {
   document.addEventListener('keyup', onKeyUp);
   document.addEventListener('contextmenu', (e) => e.preventDefault());
   onGameModeChange(handleModeChange);
+
+  // Handle race: if initCameraSwitcher already triggered physical mode
+  // before this listener was registered, apply it now.
+  if (getGameMode() === 'physical') {
+    handleModeChange('physical');
+  }
 }
 
 export function updateCanvasSize(size) {

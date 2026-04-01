@@ -43,7 +43,6 @@
     }
     .fullscreen-launch,
     .fullscreen-exit,
-    .mode-toggle,
     .recalibrate-button {
       border: 0;
       border-radius: 18px;
@@ -68,29 +67,36 @@
     }
     .fullscreen-launch:hover,
     .fullscreen-exit:hover,
-    .mode-toggle:hover,
     .recalibrate-button:hover {
       background: #ffffff;
     }
     .fullscreen-launch:focus-visible,
     .fullscreen-exit:focus-visible,
-    .mode-toggle:focus-visible,
     .recalibrate-button:focus-visible,
     .camera-panel-toggle:focus-visible,
     #cameraSelect:focus-visible {
       outline: 3px solid #8ab4ff;
       outline-offset: 3px;
     }
-    .mode-toggle {
-      position: fixed;
-      left: 16px;
-      top: 16px;
-      z-index: 10001;
-      min-width: 180px;
-      min-height: 56px;
-      padding: 12px 16px;
-      font-size: 1rem;
-      font-weight: 700;
+    .camera-on-off-toggle {
+      flex-shrink: 0;
+      padding: 4px 12px;
+      font: inherit;
+      line-height: 1.2;
+      border-radius: 6px;
+      border: 1px solid #555;
+      background: #2a2a2a;
+      color: #e8e8e8;
+      cursor: pointer;
+    }
+    .camera-on-off-toggle:hover {
+      background: #3a3a3a;
+      border-color: #666;
+    }
+    .camera-on-off-toggle[aria-pressed="true"] {
+      background: #2e6b2e;
+      border-color: #4a4;
+      color: #d0ffd0;
     }
     .fullscreen-exit {
       display: none;
@@ -160,7 +166,6 @@
     .camera-panel-header {
       display: flex;
       align-items: center;
-      justify-content: space-between;
       gap: 8px;
       margin-bottom: 0;
     }
@@ -184,9 +189,6 @@
     .camera-panel-toggle:hover {
       background: #3a3a3a;
       border-color: #666;
-    }
-    .camera-panel--collapsed .camera-panel-toggle {
-      margin-left: auto;
     }
     .camera-panel label {
       display: block;
@@ -214,7 +216,7 @@
     .calibration-key {
       position: fixed;
       left: 16px;
-      bottom: 16px;
+      bottom: 52px;
       z-index: 9999;
       padding: 10px 12px;
       border-radius: 8px;
@@ -234,15 +236,6 @@
   </style>
 </head>
 <body>
-  <button
-    type="button"
-    id="gameModeToggle"
-    class="mode-toggle"
-    aria-pressed="false"
-    title="Switch between digital and physical play modes"
-  >
-    Mode: Digital
-  </button>
   <button
     type="button"
     id="enterFullscreenButton"
@@ -291,7 +284,7 @@
   </div>
   <div class="camera-panel" id="cameraPanel" aria-label="Camera preview">
     <div class="camera-panel-header">
-      <span class="camera-panel-title">Camera</span>
+      <button type="button" id="cameraToggle" class="camera-on-off-toggle" aria-pressed="false" title="Turn camera on or off">Camera Off</button>
       <button type="button" id="cameraPanelToggle" class="camera-panel-toggle" aria-expanded="true" aria-controls="camera-panel-body" title="Hide camera controls">
         Hide
       </button>

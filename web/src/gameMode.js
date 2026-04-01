@@ -1,15 +1,5 @@
-const STORAGE_KEY = 'angrySheepGameMode';
-
 let gameMode = 'digital';
 let changeListeners = [];
-
-function persistMode() {
-  try {
-    localStorage.setItem(STORAGE_KEY, gameMode);
-  } catch (e) {
-    /* ignore storage issues */
-  }
-}
 
 function notifyModeChange() {
   document.body?.setAttribute('data-game-mode', gameMode);
@@ -23,31 +13,7 @@ function notifyModeChange() {
 }
 
 export function initGameMode() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === 'digital' || saved === 'physical') {
-      gameMode = saved;
-    }
-  } catch (e) {
-    /* ignore storage issues */
-  }
-
-  const button = document.getElementById('gameModeToggle');
-  if (!button) return;
-
-  const syncButton = () => {
-    button.textContent = `Mode: ${gameMode === 'digital' ? 'Digital' : 'Physical'}`;
-    button.setAttribute('aria-pressed', gameMode === 'physical' ? 'true' : 'false');
-    document.body?.setAttribute('data-game-mode', gameMode);
-  };
-
-  syncButton();
-  button.addEventListener('click', () => {
-    setGameMode(gameMode === 'digital' ? 'physical' : 'digital');
-    syncButton();
-  });
-
-  onGameModeChange(syncButton);
+  document.body?.setAttribute('data-game-mode', gameMode);
 }
 
 export function getGameMode() {
@@ -58,7 +24,6 @@ export function setGameMode(mode) {
   if (mode !== 'digital' && mode !== 'physical') return;
   if (gameMode === mode) return;
   gameMode = mode;
-  persistMode();
   notifyModeChange();
 }
 

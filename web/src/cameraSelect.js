@@ -1,31 +1,56 @@
 /**
  * Browser camera preview + device switcher (MediaDevices API).
+ * Camera on/off drives game mode: on → physical, off → digital.
  * Changing the dropdown also tells server.py (via WebSocket) to use the same
  * camera *index* in OpenCV (order usually matches macOS Chrome/Safari).
  */
 
 import { onMarkerWsOpen, sendTrackingCommand } from './markerStream.js';
 import { startBrowserFramePump, stopBrowserFramePump } from './browserFramePump.js';
+import { setGameMode } from './gameMode.js';
 
 const STORAGE_KEY = 'angrySheepCameraDeviceId';
 const PANEL_COLLAPSED_KEY = 'angrySheepCameraPanelCollapsed';
+const CAMERA_ENABLED_KEY = 'angrySheepCameraEnabled';
+
+let currentStream = null;
+let cameraActive = false;
+
+/* ── UI helpers ── */
+
+function syncPanelToggleVisibility() {
+  const btn = document.getElementById('cameraPanelToggle');
+  if (!btn) return;
+  btn.style.display = cameraActive ? '' : 'none';
+}
+
+function syncCameraToggleButton() {
+  const btn = document.getElementById('cameraToggle');
+  if (!btn) return;
+  btn.textContent = cameraActive ? 'Camera On' : 'Camera Off';
+  btn.setAttribute('aria-pressed', cameraActive ? 'true' : 'false');
+  syncPanelToggleVisibility();
+}
+
+function setCameraPanelCollapsed(collapsed) {
+  const panel = document.getElementById('cameraPanel');
+  const toggle = document.getElementById('cameraPanelToggle');
+  if (!panel || !toggle) return;
+  panel.classList.toggle('camera-panel--collapsed', collapsed);
+  toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+  toggle.textContent = collapsed ? 'Show' : 'Hide';
+  toggle.title = collapsed ? 'Show camera controls' : 'Hide camera controls';
+  try {
+    localStorage.setItem(PANEL_COLLAPSED_KEY, collapsed ? '1' : '0');
+  } catch (e) {
+    /* private mode */
+  }
+}
 
 function initCameraPanelToggle() {
   const panel = document.getElementById('cameraPanel');
   const toggle = document.getElementById('cameraPanelToggle');
   if (!panel || !toggle) return;
-
-  function applyCollapsed(collapsed) {
-    panel.classList.toggle('camera-panel--collapsed', collapsed);
-    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-    toggle.textContent = collapsed ? 'Show' : 'Hide';
-    toggle.title = collapsed ? 'Show camera controls' : 'Hide camera controls';
-    try {
-      localStorage.setItem(PANEL_COLLAPSED_KEY, collapsed ? '1' : '0');
-    } catch (e) {
-      /* private mode */
-    }
-  }
 
   let initialCollapsed = false;
   try {
@@ -33,12 +58,14 @@ function initCameraPanelToggle() {
   } catch (e) {
     /* ignore */
   }
-  applyCollapsed(initialCollapsed);
+  setCameraPanelCollapsed(initialCollapsed);
 
   toggle.addEventListener('click', () => {
-    applyCollapsed(!panel.classList.contains('camera-panel--collapsed'));
+    setCameraPanelCollapsed(!panel.classList.contains('camera-panel--collapsed'));
   });
 }
+
+/* ── OpenCV camera-index sync ── */
 
 function syncOpenCvToDropdown() {
   const sel = getSelectEl();
@@ -56,7 +83,7 @@ onMarkerWsOpen(() => {
   syncOpenCvToDropdown();
 });
 
-let currentStream = null;
+/* ── DOM accessors ── */
 
 function getVideoEl() {
   return document.getElementById('video');
@@ -65,6 +92,8 @@ function getVideoEl() {
 function getSelectEl() {
   return document.getElementById('cameraSelect');
 }
+
+/* ── Stream lifecycle ── */
 
 function stopCurrentStream() {
   stopBrowserFramePump();
@@ -76,6 +105,19 @@ function stopCurrentStream() {
   if (video) {
     video.srcObject = null;
   }
+}
+
+export function stopCamera() {
+  stopCurrentStream();
+  cameraActive = false;
+  try {
+    localStorage.setItem(CAMERA_ENABLED_KEY, '0');
+  } catch (e) {
+    /* private mode */
+  }
+  setGameMode('digital');
+  syncCameraToggleButton();
+  setCameraPanelCollapsed(true);
 }
 
 /**
@@ -99,15 +141,40 @@ export async function startCamera(deviceId) {
     if (video.readyState >= 2 && video.videoWidth) {
       onReady();
     }
+
+    // Listen for unexpected camera disconnect
+    stream.getTracks().forEach((track) => {
+      track.addEventListener('ended', () => {
+        if (currentStream === stream) {
+          stopCamera();
+        }
+      });
+    });
+
     try {
       localStorage.setItem(STORAGE_KEY, deviceId);
+      localStorage.setItem(CAMERA_ENABLED_KEY, '1');
     } catch (e) {
       /* private mode */
     }
+
+    cameraActive = true;
+    setGameMode('physical');
+    syncCameraToggleButton();
+    setCameraPanelCollapsed(false);
   } catch (err) {
     console.warn('[camera] startCamera failed:', err);
+    cameraActive = false;
+    setGameMode('digital');
+    syncCameraToggleButton();
   }
 }
+
+export function isCameraActive() {
+  return cameraActive;
+}
+
+/* ── Dropdown population ── */
 
 function populateSelect(select, videoInputs) {
   select.innerHTML = '';
@@ -119,6 +186,8 @@ function populateSelect(select, videoInputs) {
     select.appendChild(opt);
   });
 }
+
+/* ── Initialisation ── */
 
 export async function initCameraSwitcher() {
   window.addEventListener(
@@ -142,6 +211,7 @@ export async function initCameraSwitcher() {
     opt.value = '';
     select.appendChild(opt);
     select.disabled = true;
+    syncCameraToggleButton();
     return;
   }
 
@@ -160,6 +230,7 @@ export async function initCameraSwitcher() {
     opt.value = '';
     select.appendChild(opt);
     select.disabled = true;
+    syncCameraToggleButton();
     return;
   }
 
@@ -177,6 +248,7 @@ export async function initCameraSwitcher() {
     opt.value = '';
     select.appendChild(opt);
     select.disabled = true;
+    syncCameraToggleButton();
     return;
   }
 
@@ -184,10 +256,24 @@ export async function initCameraSwitcher() {
 
   select.addEventListener('change', () => {
     const id = select.value;
-    if (id) startCamera(id);
+    if (id && cameraActive) startCamera(id);
     syncOpenCvToDropdown();
   });
 
+  // Wire camera on/off toggle
+  const cameraToggle = document.getElementById('cameraToggle');
+  if (cameraToggle) {
+    cameraToggle.addEventListener('click', () => {
+      if (cameraActive) {
+        stopCamera();
+      } else {
+        const id = select.value;
+        if (id) startCamera(id);
+      }
+    });
+  }
+
+  // Restore preferred device
   let preferred = null;
   try {
     preferred = localStorage.getItem(STORAGE_KEY);
@@ -199,6 +285,22 @@ export async function initCameraSwitcher() {
     preferred && videoInputs.some((d) => d.deviceId === preferred);
   const startId = validPreferred ? preferred : videoInputs[0].deviceId;
   select.value = startId;
-  await startCamera(startId);
-  syncOpenCvToDropdown();
+
+  // Check if camera was previously enabled
+  let savedEnabled = null;
+  try {
+    savedEnabled = localStorage.getItem(CAMERA_ENABLED_KEY);
+  } catch (e) {
+    /* ignore */
+  }
+
+  if (savedEnabled === '0') {
+    // User explicitly turned camera off last time — stay digital
+    syncCameraToggleButton();
+    syncOpenCvToDropdown();
+  } else {
+    // Auto-start camera (first visit or was previously on)
+    await startCamera(startId);
+    syncOpenCvToDropdown();
+  }
 }

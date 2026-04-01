@@ -40,9 +40,9 @@ import {
 import { initSoundPanel, fadeAudio, setEatGrassActive } from './sound.js';
 import './browserFramePump.js';
 
-initCameraSwitcher().catch((e) => console.warn('[camera] init:', e));
-initMarkerCalibration();
 initGameMode();
+initMarkerCalibration();
+initCameraSwitcher().catch((e) => console.warn('[camera] init:', e));
 
 let notifyViewportChange = () => {};
 initFullscreenControls(() => {
@@ -78,20 +78,20 @@ function drawCalibrationCircleTargets(p, canvasSize) {
 let resetBtn = null;
 function initResetButton() {
   resetBtn = document.createElement('button');
-  resetBtn.textContent = 'Reset';
+  resetBtn.textContent = 'Reset the Game';
   Object.assign(resetBtn.style, {
     position: 'fixed',
-    bottom: '14px',
-    left: '14px',
-    zIndex: '900',
+    top: '10px',
+    right: '160px',
+    zIndex: '1000',
     padding: '6px 14px',
-    background: 'rgba(0,0,0,0.45)',
-    color: '#ddd',
-    border: '1px solid rgba(255,255,255,0.2)',
-    borderRadius: '6px',
+    background: '#8b1a1a',
+    color: '#fff',
+    border: '1px solid #b33',
+    borderRadius: '4px',
     cursor: 'pointer',
     fontSize: '13px',
-    fontFamily: 'sans-serif',
+    fontFamily: 'monospace',
     display: 'none',
   });
   resetBtn.addEventListener('click', () => Session.resetSession());
@@ -291,7 +291,7 @@ new p5((p) => {
 
     // Physical ArUco markers stay visible even when calibration moves them
     // into the black overscan area around the play circle.
-    if (phase !== 'win' && gameMode === 'digital') {
+    if (phase !== 'win' && gameMode === 'physical') {
       drawMarkerOverlay(p, canvasSize);
     }
 
