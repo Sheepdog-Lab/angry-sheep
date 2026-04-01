@@ -193,8 +193,19 @@ function onMouseDragged() {
 
   const tool = state.tools.find((t) => t.id === dragId);
   if (tool) {
-    tool.x = Math.max(0, Math.min(1, n.x + dragOffsetX));
-    tool.y = Math.max(0, Math.min(1, n.y + dragOffsetY));
+    let tx = n.x + dragOffsetX;
+    let ty = n.y + dragOffsetY;
+    // Clamp to table circle with margin so tools stay fully visible
+    const dx = tx - 0.5;
+    const dy = ty - 0.5;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const maxR = TABLE_RADIUS - TOOL_HIT_RADIUS;
+    if (dist > maxR) {
+      tx = 0.5 + (dx / dist) * maxR;
+      ty = 0.5 + (dy / dist) * maxR;
+    }
+    tool.x = tx;
+    tool.y = ty;
   }
 }
 

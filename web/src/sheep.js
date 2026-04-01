@@ -403,7 +403,7 @@ function applyEdgeBounce(sheep) {
 /** Crisis sheep inside/near the pen steer toward the nearest unblocked gap and bolt out. */
 function applyCrisisPenEscape(sheep, tools) {
   if (sheep.captured) return;
-  if (sheep.stress < SHEEP.crisisThreshold) return;
+  if (sheep.stress < SHEEP.crisisThreshold * 0.7) return;
   const info = penEdgeInfo(sheep.x, sheep.y);
   // Only act when inside or very close to the pen fence
   if (info.dist >= PEN.radius + SHEEP.penFenceThickness) return;
@@ -701,8 +701,8 @@ function isPointInForwardCone(tool, dx, dy) {
 }
 
 function applyPenCapture(sheep) {
-  // Crisis sheep can't be captured
-  if (sheep.stress >= SHEEP.crisisThreshold) {
+  // Agitated sheep (>= 70% stress) can't be captured — they escape instead
+  if (sheep.stress >= SHEEP.crisisThreshold * 0.7) {
     sheep.penFrames = 0;
     return;
   }
@@ -710,6 +710,7 @@ function applyPenCapture(sheep) {
     sheep.penFrames++;
     if (sheep.penFrames >= SHEEP.captureSettleTime) {
       sheep.captured = true;
+      sheep.stress = 0;
       playSfx('smallWin');
     }
   } else {

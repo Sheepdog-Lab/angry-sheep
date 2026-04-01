@@ -128,6 +128,33 @@ function applyVolumes() {
   }
 }
 
+/** Attempt to start all background tracks; on failure, retry on first user gesture. */
+function tryPlayAll() {
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+
+  const startAll = () => {
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    for (const [, p] of players) p.audio.play().catch(() => {});
+  };
+
+  // Try immediately — if browser blocks it, set up gesture listeners to retry
+  let blocked = false;
+  for (const [, p] of players) {
+    p.audio.play().then(() => {}, () => { blocked = true; });
+  }
+
+  const resume = () => {
+    startAll();
+    document.removeEventListener('click', resume);
+    document.removeEventListener('touchstart', resume);
+    document.removeEventListener('keydown', resume);
+  };
+  // Always register — cheap no-op if audio already playing
+  document.addEventListener('click', resume);
+  document.addEventListener('touchstart', resume);
+  document.addEventListener('keydown', resume);
+}
+
 /**
  * Smoothly drive background audio volume each frame.
  * @param {number} t - fade multiplier 0–1 (0 = silent, 1 = full user volume)
@@ -137,10 +164,7 @@ export function fadeAudio(t) {
 
   if (fadeMul > 0 && !playing) {
     playing = true;
-    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-    for (const [, p] of players) {
-      p.audio.play().catch(() => {});
-    }
+    tryPlayAll();
   }
 
   applyVolumes();
