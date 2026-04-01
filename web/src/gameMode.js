@@ -12,6 +12,7 @@ function persistMode() {
 }
 
 function notifyModeChange() {
+  document.body?.setAttribute('data-game-mode', gameMode);
   for (const cb of changeListeners) {
     try {
       cb(gameMode);
@@ -37,6 +38,7 @@ export function initGameMode() {
   const syncButton = () => {
     button.textContent = `Mode: ${gameMode === 'digital' ? 'Digital' : 'Physical'}`;
     button.setAttribute('aria-pressed', gameMode === 'physical' ? 'true' : 'false');
+    document.body?.setAttribute('data-game-mode', gameMode);
   };
 
   syncButton();

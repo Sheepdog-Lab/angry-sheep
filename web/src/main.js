@@ -1,8 +1,8 @@
 import p5 from 'p5';
 import {
   CANVAS_BG_COLOR,
-  MARKER_STREAM,
   MASK_COLOR,
+  MARKER_STREAM,
   TABLE_RADIUS,
   TERRAIN_TEXTURE_URL,
   SHEEP_TEXTURE_URL,
@@ -19,12 +19,12 @@ import {
 } from './config.js';
 import * as Input from './input.js';
 import { drawPen, setPenSprite } from './pen.js';
-import { drawPhysicalTools, drawTools, setGrassSprite, setSheepdogSprite, setBlockSprite } from './tools.js';
+import { drawTools, setGrassSprite, setSheepdogSprite, setBlockSprite } from './tools.js';
 import { updateFlock, drawFlock, setSheepSprite, getFlock, isAnySheepEating } from './sheep.js';
 import * as Session from './session.js';
 import { initTuning } from './tuning.js';
 import { connectMarkerStream, getMarkerStreamState } from './markerStream.js';
-import { initMarkerCalibration } from './markerCalibration.js';
+import { getMarkerCalibration, initMarkerCalibration } from './markerCalibration.js';
 import { drawMarkerOverlay } from './markerOverlay.js';
 import { initCameraSwitcher } from './cameraSelect.js';
 import { getGameStageSize, initFullscreenControls } from './fullscreen.js';
@@ -49,9 +49,40 @@ initFullscreenControls(() => {
   notifyViewportChange();
 });
 
+function drawCalibrationCircleTargets(p, canvasSize) {
+  const cx = canvasSize / 2;
+  const cy = canvasSize / 2;
+  const r = TABLE_RADIUS * canvasSize;
+  const points = [
+    { x: cx, y: cy - r, label: '1' },
+    { x: cx + r, y: cy, label: '2' },
+    { x: cx, y: cy + r, label: '3' },
+    { x: cx - r, y: cy, label: '4' },
+  ];
+
+  for (const point of points) {
+    p.push();
+    p.fill(255, 220, 90, 220);
+    p.stroke(0, 0, 0, 220);
+    p.strokeWeight(2);
+    p.circle(point.x, point.y, 28);
+    p.noStroke();
+    p.fill(0);
+    p.textAlign(p.CENTER, p.CENTER);
+    p.textSize(14);
+    p.text(point.label, point.x, point.y);
+    p.pop();
+  }
+}
+
 new p5((p) => {
   let canvasSize;
   let canvasEl = null;
+  let calibrationConfirmedAtMs = null;
+  let lastCalibrationLoaded = false;
+  let lastCalibrationNoticeId = 0;
+  let calibrationNoticeText = '';
+  let calibrationNoticeAtMs = null;
   /** @type {import('p5').Image | null} */
   let terrainImg = null;
   /** @type {import('p5').Image | null} */
@@ -129,6 +160,25 @@ new p5((p) => {
     const phase = Session.getPhase();
     const gameMode = getGameMode();
     const markerState = getMarkerStreamState();
+    const markerCalibration = getMarkerCalibration();
+    const calibrationLoaded = !!markerState.calibration?.loaded;
+    const calibrationActive = !!markerState.calibration?.active;
+    const calibrationNoticeId = Number(markerState.calibration?.noticeId || 0);
+    const calibrationMessage = markerState.calibration?.message || '';
+
+    if (calibrationLoaded && !lastCalibrationLoaded) {
+      calibrationConfirmedAtMs = p.millis();
+    }
+    if (!calibrationLoaded) {
+      calibrationConfirmedAtMs = null;
+    }
+    lastCalibrationLoaded = calibrationLoaded;
+
+    if (calibrationNoticeId && calibrationNoticeId !== lastCalibrationNoticeId && calibrationMessage) {
+      calibrationNoticeText = calibrationMessage;
+      calibrationNoticeAtMs = p.millis();
+      lastCalibrationNoticeId = calibrationNoticeId;
+    }
 
     // Update session state machine
     Session.update();
@@ -148,13 +198,7 @@ new p5((p) => {
     // Only run sheep sim during playing phase
     if (gameMode === 'physical') {
       Input.setPhysicalTools(
-        buildPhysicalTools(
-          markerState.markers,
-          canvasSize,
-          markerState.frameW,
-          markerState.frameH,
-          MARKER_STREAM.mirrorX,
-        ),
+        buildPhysicalTools(markerState.markers),
       );
     }
 
@@ -194,11 +238,7 @@ new p5((p) => {
     // Sheep and tools (hidden on win — victory uses its own character sprites)
     if (phase !== 'reset' && phase !== 'win') {
       drawFlock(p, canvasSize);
-      if (gameMode === 'physical') {
-        drawPhysicalTools(p, state.tools, canvasSize);
-      } else {
-        drawTools(p, state.tools, canvasSize, Input.getHoveredId(), getFlock());
-      }
+      drawTools(p, state.tools, canvasSize, Input.getHoveredId(), getFlock());
     }
 
     // Black mask
@@ -221,6 +261,10 @@ new p5((p) => {
     p.strokeWeight(1.5);
     p.ellipse(cx, cy, r * 2);
 
+    if (gameMode === 'physical' && (!calibrationLoaded || calibrationActive)) {
+      drawCalibrationCircleTargets(p, canvasSize);
+    }
+
     // Physical ArUco markers stay visible even when calibration moves them
     // into the black overscan area around the play circle.
     if (phase !== 'win' && gameMode === 'digital') {
@@ -241,11 +285,52 @@ new p5((p) => {
     p.textSize(11);
     p.textAlign(p.LEFT, p.TOP);
     p.text(
-      `Mode: ${gameMode}  |  markers: ${markerState.markers.length}  |  raw: ${markerState.rawMarkers.map((m) => m.id).join(', ') || 'none'}`,
+      `Mode: ${gameMode}  |  markers: ${markerState.markers.length}  |  raw: ${markerState.rawMarkers.map((m) => m.id).join(', ') || 'none'}${gameMode === 'physical' ? `  |  flipX: ${markerCalibration.flipX} flipY: ${markerCalibration.flipY}` : ''}`,
       12,
       12,
     );
     p.pop();
+
+    if (
+      gameMode === 'physical' &&
+      calibrationLoaded &&
+      !calibrationActive &&
+      calibrationConfirmedAtMs !== null &&
+      (p.millis() - calibrationConfirmedAtMs) <= 10000
+    ) {
+      p.push();
+      p.fill(70, 220, 120, 220);
+      p.stroke(10, 60, 20, 220);
+      p.strokeWeight(2);
+      p.rectMode(p.CENTER);
+      p.rect(canvasSize / 2, 36, 250, 38, 10);
+      p.noStroke();
+      p.fill(10, 30, 14);
+      p.textAlign(p.CENTER, p.CENTER);
+      p.textSize(16);
+      p.text('Calibration complete', canvasSize / 2, 36);
+      p.pop();
+    }
+
+    if (
+      gameMode === 'physical' &&
+      calibrationNoticeText &&
+      calibrationNoticeAtMs !== null &&
+      (p.millis() - calibrationNoticeAtMs) <= 2500
+    ) {
+      p.push();
+      p.fill(30, 30, 30, 220);
+      p.stroke(255, 255, 255, 90);
+      p.strokeWeight(1.5);
+      p.rectMode(p.CENTER);
+      p.rect(canvasSize / 2, 74, Math.min(canvasSize - 40, 520), 42, 10);
+      p.noStroke();
+      p.fill(255);
+      p.textAlign(p.CENTER, p.CENTER);
+      p.textSize(14);
+      p.text(calibrationNoticeText, canvasSize / 2, 74);
+      p.pop();
+    }
   };
 
   p.windowResized = () => {

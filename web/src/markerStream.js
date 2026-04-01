@@ -6,6 +6,7 @@ let connected = false;
 let frameW = 640;
 let frameH = 480;
 let rawMarkers = [];
+let calibration = { active: false, count: 0, nextCorner: 'top', loaded: false, message: '', noticeId: 0 };
 
 /** @type {Map<number, { x: number, y: number, miss: number, id: number }>} */
 const stableById = new Map();
@@ -142,6 +143,9 @@ export function connectMarkerStream() {
           frameW = w;
           frameH = h;
         }
+        calibration = data.calibration && typeof data.calibration === 'object'
+          ? data.calibration
+          : calibration;
         list = Array.isArray(data.markers) ? data.markers : [];
       }
       rawMarkers = list.filter(
@@ -170,6 +174,7 @@ export function getMarkerStreamState() {
     frameW,
     frameH,
     rawMarkers,
+    calibration,
     markers: stableMarkersForDraw(),
   };
 }
@@ -186,6 +191,7 @@ if (import.meta.hot) {
     }
     connected = false;
     rawMarkers = [];
+    calibration = { active: false, count: 0, nextCorner: 'top', loaded: false, message: '', noticeId: 0 };
     stableById.clear();
   });
 }

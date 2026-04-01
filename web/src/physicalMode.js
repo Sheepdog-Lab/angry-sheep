@@ -1,5 +1,5 @@
 import { TOOL_COLORS } from './config.js';
-import { applyMarkerCalibration } from './markerCalibration.js';
+import { applyPhysicalMarkerFlip } from './markerCalibration.js';
 
 const SHEEPDOG_IDS = new Set([0, 1, 2, 3]);
 const GRASS_IDS = new Set([4, 5]);
@@ -11,27 +11,18 @@ export function getObjectTypeFromMarker(id) {
   return null;
 }
 
-export function mapMarkerToCanvas(mx, my, canvasSize, frameW, frameH, mirrorX) {
-  if (!frameW || !frameH) return { x: 0, y: 0 };
-  let x = (mx / frameW) * canvasSize;
-  const y = (my / frameH) * canvasSize;
-  if (mirrorX) x = canvasSize - x;
-  return { x, y };
-}
-
-export function buildPhysicalTools(markers, canvasSize, frameW, frameH, mirrorX) {
+export function buildPhysicalTools(markers) {
   return markers
     .map((marker) => {
       const type = getObjectTypeFromMarker(marker.id);
       if (!type) return null;
-      const mapped = mapMarkerToCanvas(marker.x, marker.y, canvasSize, frameW, frameH, mirrorX);
-      const calibrated = applyMarkerCalibration(mapped.x, mapped.y, canvasSize);
+      const flipped = applyPhysicalMarkerFlip(marker.x, marker.y);
       return {
         id: marker.id,
         markerId: marker.id,
         type,
-        x: Math.max(0, Math.min(1, calibrated.x / canvasSize)),
-        y: Math.max(0, Math.min(1, calibrated.y / canvasSize)),
+        x: Math.max(0, Math.min(1, flipped.x)),
+        y: Math.max(0, Math.min(1, flipped.y)),
         angle_deg: typeof marker.angle_deg === 'number' ? marker.angle_deg : 0,
       };
     })

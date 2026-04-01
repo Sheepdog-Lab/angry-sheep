@@ -1,5 +1,4 @@
 import { MARKER_STREAM } from './config.js';
-import { applyMarkerCalibration, getMarkerCalibration } from './markerCalibration.js';
 import { getMarkerStreamState } from './markerStream.js';
 
 /** Distinct RGB per id — avoids p5 colorMode() changes that can flicker other layers */
@@ -11,23 +10,11 @@ function rgbForId(id) {
 }
 
 /**
- * Map camera pixel (mx, my) to p5 canvas coordinates.
- */
-function mapToCanvas(mx, my, canvasSize, fw, fh, mirrorX) {
-  if (!fw || !fh) return { x: 0, y: 0 };
-  let x = (mx / fw) * canvasSize;
-  const y = (my / fh) * canvasSize;
-  if (mirrorX) x = canvasSize - x;
-  return { x, y };
-}
-
-/**
  * Draw ArUco marker positions as dots above the playfield and black overscan mask.
  */
 export function drawMarkerOverlay(p, canvasSize) {
-  const { connected, frameW, frameH, markers, rawMarkers } = getMarkerStreamState();
-  const { mirrorX, dotRadiusPx, showLabels } = MARKER_STREAM;
-  const calibration = getMarkerCalibration();
+  const { connected, markers, rawMarkers, calibration } = getMarkerStreamState();
+  const { dotRadiusPx, showLabels } = MARKER_STREAM;
 
   const hasDots = markers.length > 0;
 
@@ -44,12 +31,9 @@ export function drawMarkerOverlay(p, canvasSize) {
 
   for (const m of markers) {
     const id = m.id;
-    const mx = m.x;
-    const my = m.y;
-    if (typeof mx !== 'number' || typeof my !== 'number' || typeof id !== 'number') continue;
-
-    const mapped = mapToCanvas(mx, my, canvasSize, frameW, frameH, mirrorX);
-    const { x, y } = applyMarkerCalibration(mapped.x, mapped.y, canvasSize);
+    const x = m.x * canvasSize;
+    const y = m.y * canvasSize;
+    if (typeof x !== 'number' || typeof y !== 'number' || typeof id !== 'number') continue;
     const { r, g, b } = rgbForId(id);
     p.push();
     p.fill(r, g, b, 240);
@@ -78,9 +62,8 @@ export function drawMarkerOverlay(p, canvasSize) {
       : 'ArUco: …';
   const rawIds = rawMarkers.map((m) => m.id).join(', ') || 'none';
   const debug =
-    `offsetX ${calibration.offsetX}  offsetY ${calibration.offsetY}\n` +
-    `scale ${calibration.scale.toFixed(2)}  flipX ${calibration.flipX}  flipY ${calibration.flipY}  rot ${calibration.rotation}\n` +
-    `raw IDs ${rawIds}`;
+    `raw IDs ${rawIds}\n` +
+    `calibration ${calibration?.active ? `${calibration.count}/4 ${calibration.nextCorner}` : calibration?.loaded ? 'loaded' : 'not set'}`;
   p.text(`${tag}\n${debug}`, canvasSize - 8, 8);
   p.pop();
 }

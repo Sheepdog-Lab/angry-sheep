@@ -1,139 +1,110 @@
-const STORAGE_KEY = 'angrySheepMarkerCalibration';
-const OFFSET_STEP = 10;
-const SCALE_STEP = 0.05;
-const ROTATION_FINE_STEP = 5;
-const MIN_SCALE = 0.1;
+import { getGameMode } from './gameMode.js';
+import { sendTrackingCommand } from './markerStream.js';
 
-let offsetX = 0;
-let offsetY = 0;
-let scale = 1;
-let flipX = false;
-let flipY = false;
-let rotation = 0;
 let initialized = false;
+let physicalFlipX = false;
+let physicalFlipY = false;
 
-function saveCalibration() {
+function getStorageKey() {
+  return 'angrySheepPhysicalMarkerFlip';
+}
+
+function saveFlipState() {
   try {
     localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ offsetX, offsetY, scale, flipX, flipY, rotation }),
+      getStorageKey(),
+      JSON.stringify({ flipX: physicalFlipX, flipY: physicalFlipY }),
     );
   } catch (e) {
     /* ignore storage issues */
   }
 }
 
-function loadCalibration() {
+function loadFlipState() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(getStorageKey());
     if (!raw) return;
     const parsed = JSON.parse(raw);
-    if (typeof parsed.offsetX === 'number') offsetX = parsed.offsetX;
-    if (typeof parsed.offsetY === 'number') offsetY = parsed.offsetY;
-    if (typeof parsed.scale === 'number') scale = Math.max(MIN_SCALE, parsed.scale);
-    if (typeof parsed.flipX === 'boolean') flipX = parsed.flipX;
-    if (typeof parsed.flipY === 'boolean') flipY = parsed.flipY;
-    if (typeof parsed.rotation === 'number') rotation = (((parsed.rotation % 360) + 360) % 360);
+    physicalFlipX = !!parsed.flipX;
+    physicalFlipY = !!parsed.flipY;
   } catch (e) {
-    /* ignore bad storage */
+    /* ignore storage issues */
   }
 }
 
-function onKeyDown(e) {
-  let changed = false;
+function requestCalibrationCapture() {
+  const ok = sendTrackingCommand({ cmd: 'captureCalibrationPoint' });
+  if (ok) {
+    console.info('[markers] calibration capture requested');
+  }
+  return ok;
+}
 
-  switch (e.key) {
-    case 'ArrowUp':
-      offsetY -= OFFSET_STEP;
-      changed = true;
-      break;
-    case 'ArrowDown':
-      offsetY += OFFSET_STEP;
-      changed = true;
-      break;
-    case 'ArrowLeft':
-      offsetX -= OFFSET_STEP;
-      changed = true;
-      break;
-    case 'ArrowRight':
-      offsetX += OFFSET_STEP;
-      changed = true;
-      break;
-    case 'i':
-    case 'I':
-      scale += SCALE_STEP;
-      changed = true;
-      break;
-    case 'o':
-    case 'O':
-      scale = Math.max(MIN_SCALE, scale - SCALE_STEP);
-      changed = true;
-      break;
-    case 'x':
-    case 'X':
-      flipX = !flipX;
-      changed = true;
-      break;
-    case 'y':
-    case 'Y':
-      flipY = !flipY;
-      changed = true;
-      break;
-    case 'r':
-    case 'R':
-      rotation = (rotation + 90) % 360;
-      changed = true;
-      break;
-    case '[':
-      rotation = (((rotation - ROTATION_FINE_STEP) % 360) + 360) % 360;
-      changed = true;
-      break;
-    case ']':
-      rotation = (rotation + ROTATION_FINE_STEP) % 360;
-      changed = true;
-      break;
-    default:
-      break;
+function requestCalibrationReset() {
+  const ok = sendTrackingCommand({ cmd: 'resetCalibration' });
+  if (ok) {
+    console.info('[markers] calibration reset requested');
+  }
+  return ok;
+}
+
+function onKeyDown(e) {
+  const target = e.target;
+  if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+
+  if ((e.key === 'x' || e.key === 'X') && getGameMode() === 'physical') {
+    physicalFlipX = !physicalFlipX;
+    saveFlipState();
+    e.preventDefault();
+    return;
   }
 
-  if (!changed) return;
-  e.preventDefault();
-  saveCalibration();
+  if ((e.key === 'y' || e.key === 'Y') && getGameMode() === 'physical') {
+    physicalFlipY = !physicalFlipY;
+    saveFlipState();
+    e.preventDefault();
+    return;
+  }
+
+  if (e.key !== 'c' && e.key !== 'C') return;
+  const ok = requestCalibrationCapture();
+  if (ok) {
+    e.preventDefault();
+  }
 }
 
 export function initMarkerCalibration() {
   if (initialized) return;
   initialized = true;
-  loadCalibration();
+  loadFlipState();
   window.addEventListener('keydown', onKeyDown);
+
+  const recalibrateButtons = [
+    document.getElementById('recalibrateButton'),
+    document.getElementById('recalibrateFullscreenButton'),
+  ];
+
+  recalibrateButtons.forEach((button) => {
+    if (!button) return;
+    button.addEventListener('click', () => {
+      if (getGameMode() !== 'physical') return;
+      requestCalibrationReset();
+    });
+  });
 }
 
-export function applyMarkerCalibration(x, y, canvasSize) {
-  let tx = x;
-  let ty = y;
-
-  if (flipX) tx = canvasSize - tx;
-  if (flipY) ty = canvasSize - ty;
-
-  const cx = canvasSize / 2;
-  const cy = canvasSize / 2;
-  const dx = tx - cx;
-  const dy = ty - cy;
-
-  const rad = (rotation * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  tx = cx + (dx * cos) - (dy * sin);
-  ty = cy + (dx * sin) + (dy * cos);
-
+export function applyPhysicalMarkerFlip(x, y) {
   return {
-    x: (tx * scale) + offsetX,
-    y: (ty * scale) + offsetY,
+    x: physicalFlipX ? 1 - x : x,
+    y: physicalFlipY ? 1 - y : y,
   };
 }
 
 export function getMarkerCalibration() {
-  return { offsetX, offsetY, scale, flipX, flipY, rotation };
+  return {
+    flipX: physicalFlipX,
+    flipY: physicalFlipY,
+  };
 }
 
 if (import.meta.hot) {

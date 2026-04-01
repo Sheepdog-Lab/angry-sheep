@@ -17,6 +17,7 @@ import json
 import math
 import sys
 import time
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -30,6 +31,30 @@ CAMERA_INDEX = 0
 CAMERA_WIDTH = 1280
 CAMERA_HEIGHT = 720
 SHOW_DEBUG_WINDOWS = False
+CALIBRATION_PATH = Path(__file__).with_name("calibration.json")
+CALIBRATION_ORDER = ("top", "right", "bottom", "left")
+TABLE_RADIUS = 0.48
+SCREEN_POINTS = np.float32(
+    [
+        [0.5, 0.5 - TABLE_RADIUS],
+        [0.5 + TABLE_RADIUS, 0.5],
+        [0.5, 0.5 + TABLE_RADIUS],
+        [0.5 - TABLE_RADIUS, 0.5],
+    ]
+)
+
+camera_points = []
+homography_matrix = None
+calibration_mode = False
+latest_camera_markers = []
+calibration_message = ""
+calibration_notice_id = 0
+
+
+def set_calibration_message(message):
+    global calibration_message, calibration_notice_id
+    calibration_message = message
+    calibration_notice_id += 1
 
 
 def configure_camera(cap):
@@ -62,6 +87,120 @@ def try_open_camera(index):
     return cap if cap.isOpened() else None
 
 
+def calibration_state_payload():
+    return {
+        "active": calibration_mode,
+        "count": len(camera_points),
+        "nextCorner": CALIBRATION_ORDER[min(len(camera_points), 3)]
+        if len(camera_points) < 4
+        else "complete",
+        "loaded": homography_matrix is not None,
+        "message": calibration_message,
+        "noticeId": calibration_notice_id,
+    }
+
+
+def load_calibration():
+    global camera_points, homography_matrix
+    if not CALIBRATION_PATH.exists():
+        return
+    try:
+        data = json.loads(CALIBRATION_PATH.read_text())
+        raw_points = data.get("camera_points")
+        raw_matrix = data.get("homography_matrix")
+        if (
+            isinstance(raw_points, list)
+            and len(raw_points) == 4
+            and isinstance(raw_matrix, list)
+            and len(raw_matrix) == 3
+        ):
+            camera_points = [[float(x), float(y)] for x, y in raw_points]
+            homography_matrix = np.array(raw_matrix, dtype=np.float32)
+            print("Loaded homography calibration from %s" % CALIBRATION_PATH, flush=True)
+    except Exception as exc:
+        print("Calibration load failed: %s" % exc, file=sys.stderr)
+
+
+def save_calibration():
+    if homography_matrix is None:
+        return
+    payload = {
+        "camera_points": camera_points,
+        "screen_points": SCREEN_POINTS.tolist(),
+        "homography_matrix": homography_matrix.tolist(),
+    }
+    CALIBRATION_PATH.write_text(json.dumps(payload, indent=2))
+
+
+def reset_calibration():
+    global calibration_mode, camera_points, homography_matrix
+    calibration_mode = True
+    camera_points = []
+    homography_matrix = None
+    try:
+        CALIBRATION_PATH.unlink(missing_ok=True)
+    except Exception as exc:
+        print("Calibration reset cleanup failed: %s" % exc, file=sys.stderr)
+    set_calibration_message("Calibration reset: 0/4 captured. Move marker to top and press C.")
+    print(
+        "Calibration reset for the green play circle. Capture points in order: %s."
+        % ", ".join(CALIBRATION_ORDER),
+        flush=True,
+    )
+
+
+def capture_calibration_point():
+    global calibration_mode, camera_points, homography_matrix
+    if not calibration_mode:
+        reset_calibration()
+
+    if not latest_camera_markers:
+        set_calibration_message(
+            "No marker detected for %s. Hold one marker steady and press C again."
+            % CALIBRATION_ORDER[len(camera_points)]
+        )
+        print("Calibration: no marker currently detected for %s." % CALIBRATION_ORDER[len(camera_points)], file=sys.stderr)
+        return
+
+    marker = sorted(latest_camera_markers, key=lambda m: m["id"])[0]
+    camera_points.append([float(marker["x"]), float(marker["y"])])
+    idx = len(camera_points) - 1
+    print(
+        "Captured %s at (%.1f, %.1f) using marker %d"
+        % (CALIBRATION_ORDER[idx], marker["x"], marker["y"], marker["id"]),
+        flush=True,
+    )
+    set_calibration_message(
+        "Captured %s (%d/4)." % (CALIBRATION_ORDER[idx], len(camera_points))
+    )
+
+    if len(camera_points) < 4:
+        set_calibration_message(
+            "Captured %s (%d/4). Move marker to %s and press C."
+            % (CALIBRATION_ORDER[idx], len(camera_points), CALIBRATION_ORDER[len(camera_points)])
+        )
+        print("Move marker to %s and press C again." % CALIBRATION_ORDER[len(camera_points)], flush=True)
+        return
+
+    homography_matrix = cv2.getPerspectiveTransform(
+        np.array(camera_points, dtype=np.float32),
+        SCREEN_POINTS,
+    )
+    calibration_mode = False
+    save_calibration()
+    set_calibration_message("Calibration complete.")
+    print("Calibration complete. Homography saved to %s." % CALIBRATION_PATH, flush=True)
+
+
+def transform_point(x, y):
+    if homography_matrix is None:
+        return None
+    pts = np.array([[[float(x), float(y)]]], dtype=np.float32)
+    warped = cv2.perspectiveTransform(pts, homography_matrix)
+    tx, ty = warped[0, 0]
+    return float(tx), float(ty)
+
+
 cap = None
 
 camera_commands = asyncio.Queue()
@@ -70,6 +209,8 @@ camera_commands = asyncio.Queue()
 _browser_bgr = None
 _browser_mono = 0.0
 BROWSER_FRAME_TTL_SEC = 0.55
+
+load_calibration()
 
 
 def ingest_browser_jpeg_b64(b64s):
@@ -99,6 +240,8 @@ def take_frame_for_detection():
         cap = open_camera(CAMERA_INDEX)
         if cap is not None:
             print("OpenCV fallback camera -> index %d" % CAMERA_INDEX, flush=True)
+        else:
+            return None, None
     ret, frame = cap.read()
     if ret and frame is not None and frame.size > 0:
         return frame, "opencv"
@@ -147,6 +290,7 @@ def detect_markers_bgr(frame_bgr):
     Run ArUco on one BGR frame. Returns (width, height, markers_list, debug_frame, processed).
     markers_list entries: id, x, y (center px), angle_deg, dir_x, dir_y.
     """
+    global latest_camera_markers
     gray, processed = preprocess_for_detection(frame_bgr)
     debug_frame = frame_bgr.copy()
 
@@ -160,6 +304,7 @@ def detect_markers_bgr(frame_bgr):
         corners, ids, _rejected = run_detect(processed)
 
     markers = []
+    latest_camera_markers = []
     if ids is not None:
         aruco.drawDetectedMarkers(debug_frame, corners, ids)
         for i, marker_id in enumerate(ids):
@@ -169,15 +314,23 @@ def detect_markers_bgr(frame_bgr):
             pts = corners[i][0]
             cx = int(pts[:, 0].mean())
             cy = int(pts[:, 1].mean())
+            latest_camera_markers.append({"id": mid, "x": cx, "y": cy})
             p0, p1 = pts[0], pts[1]
             edx = float(p1[0] - p0[0])
             edy = float(p1[1] - p0[1])
             elen = math.hypot(edx, edy) or 1.0
+            warped = transform_point(cx, cy)
+            if warped is not None:
+                tx, ty = warped
+            else:
+                h, w = frame_bgr.shape[:2]
+                tx = cx / float(w or 1)
+                ty = cy / float(h or 1)
             markers.append(
                 {
                     "id": mid,
-                    "x": cx,
-                    "y": cy,
+                    "x": round(tx, 6),
+                    "y": round(ty, 6),
                     "angle_deg": round(math.degrees(math.atan2(edy, edx)), 2),
                     "dir_x": round(edx / elen, 4),
                     "dir_y": round(edy / elen, 4),
@@ -185,6 +338,19 @@ def detect_markers_bgr(frame_bgr):
             )
 
     h, w = frame_bgr.shape[:2]
+    for idx, pt in enumerate(camera_points):
+        label = CALIBRATION_ORDER[idx]
+        cv2.circle(debug_frame, (int(pt[0]), int(pt[1])), 10, (0, 255, 255), 2)
+        cv2.putText(
+            debug_frame,
+            label,
+            (int(pt[0]) + 12, int(pt[1]) - 8),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
     return w, h, markers, debug_frame, processed
 
 
@@ -220,6 +386,13 @@ async def websocket_handler(websocket):
                 if idx < 0:
                     continue
                 await camera_commands.put(idx)
+                continue
+            if cmd == "captureCalibrationPoint":
+                capture_calibration_point()
+                continue
+            if cmd == "resetCalibration":
+                reset_calibration()
+                continue
     finally:
         clients.remove(websocket)
 
@@ -261,7 +434,14 @@ async def capture_and_stream_loop():
             continue
 
         w, h, markers, debug_frame, processed = detect_markers_bgr(frame)
-        message = json.dumps({"width": w, "height": h, "markers": markers})
+        message = json.dumps(
+            {
+                "width": 1,
+                "height": 1,
+                "markers": markers,
+                "calibration": calibration_state_payload(),
+            }
+        )
 
         if SHOW_DEBUG_WINDOWS:
             cv2.imshow("ArUco Debug", debug_frame)
