@@ -75,6 +75,29 @@ function drawCalibrationCircleTargets(p, canvasSize) {
   }
 }
 
+let resetBtn = null;
+function initResetButton() {
+  resetBtn = document.createElement('button');
+  resetBtn.textContent = 'Reset';
+  Object.assign(resetBtn.style, {
+    position: 'fixed',
+    bottom: '14px',
+    left: '14px',
+    zIndex: '900',
+    padding: '6px 14px',
+    background: 'rgba(0,0,0,0.45)',
+    color: '#ddd',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontFamily: 'sans-serif',
+    display: 'none',
+  });
+  resetBtn.addEventListener('click', () => Session.resetSession());
+  document.body.appendChild(resetBtn);
+}
+
 new p5((p) => {
   let canvasSize;
   let canvasEl = null;
@@ -142,6 +165,7 @@ new p5((p) => {
     Input.init(p, canvasSize);
     initTuning();
     initSoundPanel();
+    initResetButton();
     connectMarkerStream();
 
     notifyViewportChange = () => {
@@ -271,13 +295,14 @@ new p5((p) => {
       drawMarkerOverlay(p, canvasSize);
     }
 
-    // Session overlay (intro, timer, hints, win, timeout, reset fade)
+    // Session overlay (intro, hints, win, reset fade)
     Session.drawOverlay(p, canvasSize);
 
-    // HUD only during playing
+    // HUD + reset button only during playing
     if (phase === 'playing') {
       Input.drawHUD(p, canvasSize);
     }
+    if (resetBtn) resetBtn.style.display = phase === 'playing' ? '' : 'none';
 
     p.push();
     p.fill(255, 255, 255, 170);

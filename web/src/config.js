@@ -267,7 +267,6 @@ export const MARKER_STREAM = {
 // -- Session --
 export const SESSION = {
   introDuration: 60 * 3,    // frames for intro animation (~3s)
-  timerSeconds: 180,         // 3 minute session
-  outroDuration: 60 * 5,    // frames for win/timeout screen (~5s)
+  outroDuration: 60 * 5,    // frames for win screen (~5s)
   resetPause: 60 * 2,       // frames to pause before auto-reset (~2s)
 };

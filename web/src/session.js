@@ -1,11 +1,10 @@
 import { SESSION, TABLE_RADIUS, SHEEP as SHEEP_CFG } from './config.js';
 import { spawnFlock, getFlock } from './sheep.js';
-import { playSfx } from './sound.js';
+import { playSfx, muteTrackTemp } from './sound.js';
 
-// States: 'intro' → 'playing' → 'win' | 'timeout' → 'reset' → 'intro'
+// States: 'intro' → 'playing' → 'win' → 'reset' → 'intro'
 let phase = 'intro';
 let frameCounter = 0;       // frames elapsed in current phase
-let timerFrames = 0;         // frames elapsed during 'playing' phase
 
 /** @type {{ s1: import('p5').Image | null; s2: import('p5').Image | null; s3: import('p5').Image | null; banner: import('p5').Image | null }} */
 let victorySprites = {
@@ -37,16 +36,17 @@ export function getFrameCounter() {
   return frameCounter;
 }
 
-export function getTimerSeconds() {
-  const elapsed = timerFrames / 60;
-  return Math.max(0, SESSION.timerSeconds - elapsed);
-}
-
 export function startSession() {
   phase = 'intro';
   frameCounter = 0;
-  timerFrames = 0;
   spawnFlock();
+}
+
+/** Manual reset — triggers fade-to-black then restarts. */
+export function resetSession() {
+  if (phase === 'reset' || phase === 'intro') return;
+  phase = 'reset';
+  frameCounter = 0;
 }
 
 export function update() {
@@ -58,27 +58,18 @@ export function update() {
       frameCounter = 0;
     }
   } else if (phase === 'playing') {
-    timerFrames++;
-
     // Check win
     const flock = getFlock();
     const allCaptured = flock.length > 0 && flock.every((s) => s.captured);
     if (allCaptured) {
       phase = 'win';
       frameCounter = 0;
+      muteTrackTemp('kids', true);
+      playSfx('trumpet');
       playSfx('kidsLaugh');
-      playSfx('bigWin');
       return;
     }
-
-    // Check timeout
-    if (timerFrames >= SESSION.timerSeconds * 60) {
-      phase = 'timeout';
-      frameCounter = 0;
-      playSfx('gameOver');
-      playSfx('lose');
-    }
-  } else if (phase === 'win' || phase === 'timeout') {
+  } else if (phase === 'win') {
     if (frameCounter >= SESSION.outroDuration) {
       phase = 'reset';
       frameCounter = 0;
@@ -87,7 +78,7 @@ export function update() {
     if (frameCounter >= SESSION.resetPause) {
       phase = 'intro';
       frameCounter = 0;
-      timerFrames = 0;
+      muteTrackTemp('kids', false);
       spawnFlock();
     }
   }
@@ -102,12 +93,9 @@ export function drawOverlay(p, canvasSize) {
   if (phase === 'intro') {
     drawIntro(p, canvasSize, cx, cy);
   } else if (phase === 'playing') {
-    drawTimer(p, canvasSize);
     drawHints(p, canvasSize);
   } else if (phase === 'win') {
     drawWin(p, canvasSize, cx, cy);
-  } else if (phase === 'timeout') {
-    drawTimeout(p, canvasSize, cx, cy);
   } else if (phase === 'reset') {
     drawResetFade(p, canvasSize);
   }
@@ -159,40 +147,6 @@ function drawIntro(p, s, cx, cy) {
     p.fill(80, 80, 80, iconAlpha);
     p.ellipse(cx + s * 0.01, cy - s * 0.005, s * 0.012, s * 0.01);
   }
-}
-
-function drawTimer(p, s) {
-  const remaining = getTimerSeconds();
-  const minutes = Math.floor(remaining / 60);
-  const seconds = Math.floor(remaining % 60);
-  const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-  // Timer arc at top-center
-  const timerCx = s / 2;
-  const timerCy = s * 0.06;
-  const timerR = s * 0.035;
-  const progress = 1 - remaining / SESSION.timerSeconds;
-
-  // Background circle
-  p.noFill();
-  p.stroke(255, 255, 255, 40);
-  p.strokeWeight(3);
-  p.ellipse(timerCx, timerCy, timerR * 2);
-
-  // Progress arc (depleting)
-  const urgent = remaining < 30;
-  p.stroke(urgent ? p.color(255, 80, 80, 200) : p.color(255, 255, 255, 150));
-  p.strokeWeight(3);
-  p.arc(timerCx, timerCy, timerR * 2, timerR * 2,
-    -Math.PI / 2,
-    -Math.PI / 2 + (1 - progress) * Math.PI * 2);
-
-  // Time text
-  p.noStroke();
-  p.fill(urgent ? p.color(255, 100, 100) : p.color(255, 255, 255, 180));
-  p.textSize(s * 0.022);
-  p.textAlign(p.CENTER, p.CENTER);
-  p.text(timeStr, timerCx, timerCy + timerR + s * 0.02);
 }
 
 function drawHints(p, s) {
@@ -551,55 +505,6 @@ function drawWin(p, s, cx, cy) {
       const rr = R * (0.9 + 0.02 * Math.sin(t * 2 + k));
       drawStar(p, cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr, s * 0.0045 * (0.85 + (k % 3) * 0.08));
     }
-  }
-}
-
-function drawTimeout(p, s, cx, cy) {
-  const progress = Math.min(1, frameCounter / (SESSION.outroDuration * 0.5));
-
-  // Gentle fade overlay
-  p.noStroke();
-  p.fill(0, 0, 0, 80 * progress);
-  p.rect(0, 0, s, s);
-
-  // Hourglass icon
-  if (progress > 0.2) {
-    const alpha = Math.min(1, (progress - 0.2) * 3) * 200;
-    const iconSize = s * 0.04;
-
-    p.push();
-    p.translate(cx, cy);
-
-    // Top triangle
-    p.fill(255, 255, 255, alpha);
-    p.noStroke();
-    p.triangle(-iconSize, -iconSize, iconSize, -iconSize, 0, 0);
-    // Bottom triangle
-    p.triangle(-iconSize, iconSize, iconSize, iconSize, 0, 0);
-    // Frame lines
-    p.stroke(255, 255, 255, alpha);
-    p.strokeWeight(2);
-    p.line(-iconSize * 1.2, -iconSize, iconSize * 1.2, -iconSize);
-    p.line(-iconSize * 1.2, iconSize, iconSize * 1.2, iconSize);
-
-    p.pop();
-  }
-
-  // "Try again" arrow (circular)
-  if (progress > 0.6) {
-    const arrowAlpha = Math.min(1, (progress - 0.6) * 3) * 180;
-    p.noFill();
-    p.stroke(255, 255, 255, arrowAlpha);
-    p.strokeWeight(2.5);
-    const arrowR = s * 0.06;
-    p.arc(cx, cy + s * 0.08, arrowR, arrowR, -Math.PI * 0.8, Math.PI * 0.5);
-    // Arrowhead
-    const tipAngle = Math.PI * 0.5;
-    const tipX = cx + Math.cos(tipAngle) * arrowR * 0.5;
-    const tipY = cy + s * 0.08 + Math.sin(tipAngle) * arrowR * 0.5;
-    p.fill(255, 255, 255, arrowAlpha);
-    p.noStroke();
-    p.triangle(tipX, tipY, tipX - 5, tipY - 6, tipX + 5, tipY - 3);
   }
 }
 

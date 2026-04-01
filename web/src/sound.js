@@ -9,18 +9,15 @@ const TRACKS = [
 const SFX_DEFS = [
   { id: 'madSheep',   label: 'Sheep goes mad',    src: '/sfx-mad-sheep.mp3',    defaultVol: 0.25 },
   { id: 'smallWin',   label: 'Sheep captured',     src: '/sfx-small-win.mp3',    defaultVol: 0.30 },
-  { id: 'bigWin',     label: 'Mission complete',   src: '/sfx-big-win.mp3',      defaultVol: 0.30 },
   { id: 'kidsLaugh',  label: 'Kids laughing',      src: '/sfx-kids-laughing.mp3', defaultVol: 0.25 },
-  { id: 'gameOver',   label: 'Game over',          src: '/sfx-game-over.mp3',    defaultVol: 0.40 },
-  { id: 'lose',       label: 'Lose',               src: '/sfx-lose.mp3',         defaultVol: 0.30 },
+  { id: 'trumpet',    label: 'Trumpet',            src: '/sfx-trumpet.mp3',      defaultVol: 0.40 },
 ];
 
 /** SFX that play together share a combined TEST button. */
 const SFX_GROUPS = [
   { ids: ['madSheep'],              testLabel: 'TEST' },
   { ids: ['smallWin'],              testLabel: 'TEST' },
-  { ids: ['bigWin', 'kidsLaugh'],   testLabel: 'TEST Win' },
-  { ids: ['gameOver', 'lose'],      testLabel: 'TEST Lose' },
+  { ids: ['trumpet', 'kidsLaugh'],  testLabel: 'TEST Win' },
 ];
 
 /** Eat-grass is a singleton loop — only one instance plays at a time. */
@@ -121,7 +118,7 @@ let fadeMul = 0;
 
 function applyVolumes() {
   for (const [, p] of players) {
-    const vol = (muted || p.muted) ? 0 : p.volume * fadeMul;
+    const vol = (muted || p.muted || p._tempMute) ? 0 : p.volume * fadeMul;
     if (p.gainNode) {
       // GainNode controls volume; audio.volume stays at 1
       p.gainNode.gain.value = vol * p.maxGain;
@@ -150,6 +147,14 @@ export function fadeAudio(t) {
 
   // Keep tracks playing at volume 0 instead of pausing, so they resume
   // reliably without needing a fresh user gesture (browser autoplay policy).
+}
+
+/** Temporarily silence a background track (e.g. during victory). */
+export function muteTrackTemp(id, mute) {
+  const p = players.get(id);
+  if (!p) return;
+  p._tempMute = mute;
+  applyVolumes();
 }
 
 // -- Eat-grass loop --
