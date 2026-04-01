@@ -1,4 +1,5 @@
 import { MARKER_STREAM } from './config.js';
+import { applyMarkerCalibration, getMarkerCalibration } from './markerCalibration.js';
 import { getMarkerStreamState } from './markerStream.js';
 
 /** Distinct RGB per id — avoids p5 colorMode() changes that can flicker other layers */
@@ -21,11 +22,12 @@ function mapToCanvas(mx, my, canvasSize, fw, fh, mirrorX) {
 }
 
 /**
- * Draw ArUco marker positions as dots (run after table content, before outside mask).
+ * Draw ArUco marker positions as dots above the playfield and black overscan mask.
  */
 export function drawMarkerOverlay(p, canvasSize) {
   const { connected, frameW, frameH, markers } = getMarkerStreamState();
   const { mirrorX, dotRadiusPx, showLabels } = MARKER_STREAM;
+  const calibration = getMarkerCalibration();
 
   const hasDots = markers.length > 0;
 
@@ -46,7 +48,8 @@ export function drawMarkerOverlay(p, canvasSize) {
     const my = m.y;
     if (typeof mx !== 'number' || typeof my !== 'number' || typeof id !== 'number') continue;
 
-    const { x, y } = mapToCanvas(mx, my, canvasSize, frameW, frameH, mirrorX);
+    const mapped = mapToCanvas(mx, my, canvasSize, frameW, frameH, mirrorX);
+    const { x, y } = applyMarkerCalibration(mapped.x, mapped.y, canvasSize);
     const { r, g, b } = rgbForId(id);
     p.push();
     p.fill(r, g, b, 240);
@@ -73,6 +76,9 @@ export function drawMarkerOverlay(p, canvasSize) {
     : hasDots
       ? 'ArUco: reconnecting…'
       : 'ArUco: …';
-  p.text(tag, canvasSize - 8, 8);
+  const debug =
+    `offsetX ${calibration.offsetX}  offsetY ${calibration.offsetY}\n` +
+    `scale ${calibration.scale.toFixed(2)}  flipX ${calibration.flipX}  flipY ${calibration.flipY}  rot ${calibration.rotation}`;
+  p.text(`${tag}\n${debug}`, canvasSize - 8, 8);
   p.pop();
 }

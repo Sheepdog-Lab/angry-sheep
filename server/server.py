@@ -27,31 +27,42 @@ import websockets
 # ---------------------------------------------------------------------------
 
 CAMERA_INDEX = 0
+CAMERA_WIDTH = 1280
+CAMERA_HEIGHT = 720
+SHOW_DEBUG_WINDOWS = False
+
+
+def configure_camera(cap):
+    """Apply fallback camera settings for small / distant marker detection."""
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
+    return cap
 
 
 def open_camera(index=CAMERA_INDEX):
-    """Open the default (or given-index) webcam. Exits the process if it fails."""
-    cap = cv2.VideoCapture(index)
+    """Open the default (or given-index) webcam. Returns None if it fails."""
+    cap = configure_camera(cv2.VideoCapture(index))
     if not cap.isOpened():
         print(
-            "Error: could not open camera (index %d).\n"
+            "OpenCV: could not open fallback camera (index %d).\n"
             "  • macOS: System Settings → Privacy & Security → Camera → allow Terminal or Cursor.\n"
             "  • Quit Zoom/Meet/other apps using the camera.\n"
-            "  • Try CAMERA_INDEX = 1 in server.py if you have multiple cameras."
+            "  • Browser camera preview will still work; OpenCV fallback stays disabled."
             % index,
             file=sys.stderr,
         )
-        sys.exit(1)
+        cap.release()
+        return None
     return cap
 
 
 def try_open_camera(index):
     """Try to open a camera index without exiting the process."""
-    cap = cv2.VideoCapture(index)
+    cap = configure_camera(cv2.VideoCapture(index))
     return cap if cap.isOpened() else None
 
 
-cap = open_camera(CAMERA_INDEX)
+cap = None
 
 camera_commands = asyncio.Queue()
 
@@ -77,10 +88,17 @@ def ingest_browser_jpeg_b64(b64s):
 
 def take_frame_for_detection():
     """Return (frame_bgr, source_str) or (None, None)."""
-    global _browser_bgr, _browser_mono
+    global _browser_bgr, _browser_mono, cap
     now = time.monotonic()
     if _browser_bgr is not None and (now - _browser_mono) < BROWSER_FRAME_TTL_SEC:
+        if cap is not None:
+            cap.release()
+            cap = None
         return _browser_bgr, "browser"
+    if cap is None:
+        cap = open_camera(CAMERA_INDEX)
+        if cap is not None:
+            print("OpenCV fallback camera -> index %d" % CAMERA_INDEX, flush=True)
     ret, frame = cap.read()
     if ret and frame is not None and frame.size > 0:
         return frame, "opencv"
@@ -95,20 +113,55 @@ aruco = cv2.aruco
 ARUCO_DICTIONARY = aruco.DICT_4X4_50
 dictionary = aruco.getPredefinedDictionary(ARUCO_DICTIONARY)
 parameters = aruco.DetectorParameters()
+parameters.adaptiveThreshWinSizeMin = 3
+parameters.adaptiveThreshWinSizeMax = 23
+parameters.adaptiveThreshWinSizeStep = 10
+parameters.minMarkerPerimeterRate = 0.01
+parameters.maxMarkerPerimeterRate = 4.0
+parameters.cornerRefinementMethod = aruco.CORNER_REFINE_SUBPIX
+detector = (
+    aruco.ArucoDetector(dictionary, parameters)
+    if hasattr(aruco, "ArucoDetector")
+    else None
+)
 
 ALLOWED_MARKER_IDS = frozenset(range(0, 11))
 
 
+def preprocess_for_detection(frame_bgr):
+    gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    thresh = cv2.adaptiveThreshold(
+        blurred,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        21,
+        7,
+    )
+    return gray, thresh
+
+
 def detect_markers_bgr(frame_bgr):
     """
-    Run ArUco on one BGR frame. Returns (width, height, markers_list).
+    Run ArUco on one BGR frame. Returns (width, height, markers_list, debug_frame, processed).
     markers_list entries: id, x, y (center px), angle_deg, dir_x, dir_y.
     """
-    gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-    corners, ids, _ = aruco.detectMarkers(gray, dictionary, parameters=parameters)
+    gray, processed = preprocess_for_detection(frame_bgr)
+    debug_frame = frame_bgr.copy()
+
+    def run_detect(img):
+        if detector is not None:
+            return detector.detectMarkers(img)
+        return aruco.detectMarkers(img, dictionary, parameters=parameters)
+
+    corners, ids, _rejected = run_detect(gray)
+    if ids is None or len(ids) == 0:
+        corners, ids, _rejected = run_detect(processed)
 
     markers = []
     if ids is not None:
+        aruco.drawDetectedMarkers(debug_frame, corners, ids)
         for i, marker_id in enumerate(ids):
             mid = int(marker_id[0])
             if ALLOWED_MARKER_IDS is not None and mid not in ALLOWED_MARKER_IDS:
@@ -132,7 +185,7 @@ def detect_markers_bgr(frame_bgr):
             )
 
     h, w = frame_bgr.shape[:2]
-    return w, h, markers
+    return w, h, markers, debug_frame, processed
 
 
 # ---------------------------------------------------------------------------
@@ -180,14 +233,17 @@ async def broadcast_markers_json(message: str):
 
 
 async def capture_and_stream_loop():
-    global cap
+    global cap, CAMERA_INDEX
     while True:
         try:
             while True:
                 new_idx = camera_commands.get_nowait()
+                CAMERA_INDEX = new_idx
+                if cap is not None:
+                    cap.release()
+                    cap = None
                 ncap = try_open_camera(new_idx)
                 if ncap is not None:
-                    cap.release()
                     cap = ncap
                     print("OpenCV fallback camera -> index %d" % new_idx, flush=True)
                 else:
@@ -204,8 +260,13 @@ async def capture_and_stream_loop():
             await asyncio.sleep(0.05)
             continue
 
-        w, h, markers = detect_markers_bgr(frame)
+        w, h, markers, debug_frame, processed = detect_markers_bgr(frame)
         message = json.dumps({"width": w, "height": h, "markers": markers})
+
+        if SHOW_DEBUG_WINDOWS:
+            cv2.imshow("ArUco Debug", debug_frame)
+            cv2.imshow("ArUco Threshold", processed)
+            cv2.waitKey(1)
 
         await broadcast_markers_json(message)
         await asyncio.sleep(0.03)
@@ -232,4 +293,10 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    finally:
+        if cap is not None:
+            cap.release()
+        if SHOW_DEBUG_WINDOWS:
+            cv2.destroyAllWindows()

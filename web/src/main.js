@@ -23,6 +23,7 @@ import { updateFlock, drawFlock, setSheepSprite, getFlock, isAnySheepEating } fr
 import * as Session from './session.js';
 import { initTuning } from './tuning.js';
 import { connectMarkerStream } from './markerStream.js';
+import { initMarkerCalibration } from './markerCalibration.js';
 import { drawMarkerOverlay } from './markerOverlay.js';
 import { initCameraSwitcher } from './cameraSelect.js';
 import { getGameStageSize, initFullscreenControls } from './fullscreen.js';
@@ -37,6 +38,7 @@ import { initSoundPanel, fadeAudio, setEatGrassActive } from './sound.js';
 import './browserFramePump.js';
 
 initCameraSwitcher().catch((e) => console.warn('[camera] init:', e));
+initMarkerCalibration();
 
 let notifyViewportChange = () => {};
 initFullscreenControls(() => {
@@ -177,11 +179,6 @@ new p5((p) => {
       drawTools(p, state.tools, canvasSize, Input.getHoveredId(), getFlock());
     }
 
-    // Physical ArUco markers (hidden during win celebration for a cleaner scene)
-    if (phase !== 'win') {
-      drawMarkerOverlay(p, canvasSize);
-    }
-
     // Black mask
     const ctx = p.drawingContext;
     const cx = canvasSize / 2;
@@ -201,6 +198,12 @@ new p5((p) => {
     p.stroke(255, 255, 240, 40);
     p.strokeWeight(1.5);
     p.ellipse(cx, cy, r * 2);
+
+    // Physical ArUco markers stay visible even when calibration moves them
+    // into the black overscan area around the play circle.
+    if (phase !== 'win') {
+      drawMarkerOverlay(p, canvasSize);
+    }
 
     // Session overlay (intro, timer, hints, win, timeout, reset fade)
     Session.drawOverlay(p, canvasSize);
