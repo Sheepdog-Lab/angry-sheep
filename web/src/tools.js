@@ -1,4 +1,4 @@
-import { TOOL_COLORS, TOOL_SIZES, TOOL_HIT_RADIUS } from './config.js';
+import { PHYSICAL_MODE, TOOL_COLORS, TOOL_SIZES, TOOL_HIT_RADIUS } from './config.js';
 import { SHEEP } from './config.js';
 
 /** @type {import('p5').Image | null} */
@@ -61,10 +61,12 @@ export function drawTools(p, tools, canvasSize, hoveredId, flock) {
     p.push();
     p.translate(px, py);
 
-    // If a sheep is near, rotate the dog toward it (visual-only).
-    // We keep `tool.angle_deg` as the default and smoothly steer the sprite.
-    let rotDeg = tool.angle_deg;
-    if (tool.type === 'sheepdog') {
+    const hasPhysicalRotation = typeof tool.rotation === 'number';
+
+    // In digital mode, sheepdogs visually steer toward the nearest sheep.
+    // Physical mode keeps the marker-driven heading instead.
+    let rotDeg = typeof tool.angle_deg === 'number' ? tool.angle_deg : 0;
+    if (tool.type === 'sheepdog' && !hasPhysicalRotation) {
       const defaultRad = p.radians(tool.angle_deg);
       let currentRad = sheepdogAimRadById.has(tool.id)
         ? sheepdogAimRadById.get(tool.id)
@@ -125,6 +127,15 @@ export function drawTools(p, tools, canvasSize, hoveredId, flock) {
       p.noStroke();
       p.fill(color);
       drawGrass(p, canvasSize);
+    }
+
+    if (hasPhysicalRotation) {
+      const arrowLen = PHYSICAL_MODE.debugArrowLength * canvasSize;
+      p.stroke(255, 245, 160, 220);
+      p.strokeWeight(3);
+      p.line(0, 0, arrowLen, 0);
+      p.line(arrowLen, 0, arrowLen - 10, -6);
+      p.line(arrowLen, 0, arrowLen - 10, 6);
     }
 
     p.pop();

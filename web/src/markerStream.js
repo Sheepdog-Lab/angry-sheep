@@ -8,7 +8,12 @@ let frameH = 480;
 let rawMarkers = [];
 let calibration = { active: false, count: 0, nextCorner: 'top', loaded: false, message: '', noticeId: 0 };
 
-/** @type {Map<number, { x: number, y: number, miss: number, id: number }>} */
+function lerpAngleRad(a, b, t) {
+  const delta = Math.atan2(Math.sin(b - a), Math.cos(b - a));
+  return a + delta * t;
+}
+
+/** @type {Map<number, { x: number, y: number, angle_deg: number, miss: number, id: number }>} */
 const stableById = new Map();
 
 const wsOpenCallbacks = [];
@@ -59,6 +64,11 @@ function applySmoothing(rawMarkers) {
     const id = m.id;
     const mx = m.x;
     const my = m.y;
+    const ma = typeof m.angle === 'number'
+      ? (m.angle * 180) / Math.PI
+      : typeof m.angle_deg === 'number'
+        ? m.angle_deg
+        : 0;
     if (typeof id !== 'number' || typeof mx !== 'number' || typeof my !== 'number') continue;
     if (allowedMarkerIds && !allowedMarkerIds.has(id)) {
       continue;
@@ -67,7 +77,7 @@ function applySmoothing(rawMarkers) {
     seen.add(id);
     const prev = stableById.get(id);
     if (!prev) {
-      stableById.set(id, { x: mx, y: my, miss: 0, id });
+      stableById.set(id, { x: mx, y: my, angle_deg: ma, miss: 0, id });
       continue;
     }
 
@@ -76,13 +86,19 @@ function applySmoothing(rawMarkers) {
     const jump = Math.hypot(dx, dy);
     let nx = prev.x * (1 - a) + mx * a;
     let ny = prev.y * (1 - a) + my * a;
+    let na = lerpAngleRad(
+      (prev.angle_deg * Math.PI) / 180,
+      (ma * Math.PI) / 180,
+      a,
+    ) * (180 / Math.PI);
 
     if (jump > maxJumpPx) {
       nx = mx;
       ny = my;
+      na = ma;
     }
 
-    stableById.set(id, { x: nx, y: ny, miss: 0, id });
+    stableById.set(id, { x: nx, y: ny, angle_deg: na, miss: 0, id });
   }
 
   for (const [id, v] of stableById.entries()) {

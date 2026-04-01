@@ -264,6 +264,13 @@ export const MARKER_STREAM = {
   maxJumpPx: 260,
 };
 
+export const PHYSICAL_MODE = {
+  angleOffsetRad: 0,
+  rotationSmoothAlpha: 0.22,
+  debugArrowLength: 0.05,
+  sheepdogForwardConeDotMin: 0.15,
+};
+
 // -- Session --
 export const SESSION = {
   introDuration: 60 * 3,    // frames for intro animation (~3s)

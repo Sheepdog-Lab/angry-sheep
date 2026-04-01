@@ -1,4 +1,4 @@
-import { SHEEP, TABLE_RADIUS, PEN } from './config.js';
+import { PHYSICAL_MODE, SHEEP, TABLE_RADIUS, PEN } from './config.js';
 import { isInsidePen, isInGap, penEdgeInfo } from './pen.js';
 import { getDragId } from './input.js';
 import { playSfx } from './sound.js';
@@ -499,8 +499,13 @@ function applyToolReactions(sheep, tools) {
     const dx = sheep.x - tool.x;
     const dy = sheep.y - tool.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
+    const dogToSheepX = sheep.x - tool.x;
+    const dogToSheepY = sheep.y - tool.y;
+    const inFrontOfDog = dist <= 0.001 || tool.type !== 'sheepdog'
+      ? true
+      : isPointInForwardCone(tool, dogToSheepX, dogToSheepY);
 
-    if (tool.type === 'sheepdog' && dist < SHEEP.dogFleeRadius && dist > 0.001) {
+    if (tool.type === 'sheepdog' && dist < SHEEP.dogFleeRadius && dist > 0.001 && inFrontOfDog) {
       if (inCrisis) {
         // Crisis sheep ignore sheepdogs for movement — but it adds to split counter
         sheep.dogPushCount++;
@@ -633,7 +638,8 @@ function applyStressTracking(sheep, tools) {
     if (tool.type === 'sheepdog') {
       const dx = sheep.x - tool.x;
       const dy = sheep.y - tool.y;
-      if (Math.sqrt(dx * dx + dy * dy) < SHEEP.dogFleeRadius) {
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < SHEEP.dogFleeRadius && isPointInForwardCone(tool, dx, dy)) {
         dogNearby = true;
         break;
       }
@@ -642,6 +648,16 @@ function applyStressTracking(sheep, tools) {
   if (!dogNearby) {
     sheep.dogPushCount = 0;
   }
+}
+
+function isPointInForwardCone(tool, dx, dy) {
+  if (typeof tool.rotation !== 'number') return true;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist <= 0.0001) return true;
+  const forwardX = Math.cos(tool.rotation);
+  const forwardY = Math.sin(tool.rotation);
+  const dot = ((dx / dist) * forwardX) + ((dy / dist) * forwardY);
+  return dot > PHYSICAL_MODE.sheepdogForwardConeDotMin;
 }
 
 function applyPenCapture(sheep) {
