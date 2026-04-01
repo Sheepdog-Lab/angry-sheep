@@ -1,6 +1,7 @@
 import p5 from 'p5';
 import {
   CANVAS_BG_COLOR,
+  MARKER_STREAM,
   MASK_COLOR,
   TABLE_RADIUS,
   TERRAIN_TEXTURE_URL,
@@ -18,15 +19,17 @@ import {
 } from './config.js';
 import * as Input from './input.js';
 import { drawPen, setPenSprite } from './pen.js';
-import { drawTools, setGrassSprite, setSheepdogSprite, setBlockSprite } from './tools.js';
+import { drawPhysicalTools, drawTools, setGrassSprite, setSheepdogSprite, setBlockSprite } from './tools.js';
 import { updateFlock, drawFlock, setSheepSprite, getFlock, isAnySheepEating } from './sheep.js';
 import * as Session from './session.js';
 import { initTuning } from './tuning.js';
-import { connectMarkerStream } from './markerStream.js';
+import { connectMarkerStream, getMarkerStreamState } from './markerStream.js';
 import { initMarkerCalibration } from './markerCalibration.js';
 import { drawMarkerOverlay } from './markerOverlay.js';
 import { initCameraSwitcher } from './cameraSelect.js';
 import { getGameStageSize, initFullscreenControls } from './fullscreen.js';
+import { getGameMode, initGameMode } from './gameMode.js';
+import { buildPhysicalTools } from './physicalMode.js';
 import { stripVictoryShepherdBackdrop } from './victoryShepherdBackdrop.js';
 import {
   setTerrainGrassImage,
@@ -39,6 +42,7 @@ import './browserFramePump.js';
 
 initCameraSwitcher().catch((e) => console.warn('[camera] init:', e));
 initMarkerCalibration();
+initGameMode();
 
 let notifyViewportChange = () => {};
 initFullscreenControls(() => {
@@ -123,6 +127,8 @@ new p5((p) => {
     Input.updateHover(p);
     const state = Input.getState();
     const phase = Session.getPhase();
+    const gameMode = getGameMode();
+    const markerState = getMarkerStreamState();
 
     // Update session state machine
     Session.update();
@@ -140,6 +146,18 @@ new p5((p) => {
     }
 
     // Only run sheep sim during playing phase
+    if (gameMode === 'physical') {
+      Input.setPhysicalTools(
+        buildPhysicalTools(
+          markerState.markers,
+          canvasSize,
+          markerState.frameW,
+          markerState.frameH,
+          MARKER_STREAM.mirrorX,
+        ),
+      );
+    }
+
     if (phase === 'playing') {
       updateFlock(state);
       setEatGrassActive(isAnySheepEating());
@@ -176,7 +194,11 @@ new p5((p) => {
     // Sheep and tools (hidden on win — victory uses its own character sprites)
     if (phase !== 'reset' && phase !== 'win') {
       drawFlock(p, canvasSize);
-      drawTools(p, state.tools, canvasSize, Input.getHoveredId(), getFlock());
+      if (gameMode === 'physical') {
+        drawPhysicalTools(p, state.tools, canvasSize);
+      } else {
+        drawTools(p, state.tools, canvasSize, Input.getHoveredId(), getFlock());
+      }
     }
 
     // Black mask
@@ -201,7 +223,7 @@ new p5((p) => {
 
     // Physical ArUco markers stay visible even when calibration moves them
     // into the black overscan area around the play circle.
-    if (phase !== 'win') {
+    if (phase !== 'win' && gameMode === 'digital') {
       drawMarkerOverlay(p, canvasSize);
     }
 
@@ -212,6 +234,18 @@ new p5((p) => {
     if (phase === 'playing') {
       Input.drawHUD(p, canvasSize);
     }
+
+    p.push();
+    p.fill(255, 255, 255, 170);
+    p.noStroke();
+    p.textSize(11);
+    p.textAlign(p.LEFT, p.TOP);
+    p.text(
+      `Mode: ${gameMode}  |  markers: ${markerState.markers.length}  |  raw: ${markerState.rawMarkers.map((m) => m.id).join(', ') || 'none'}`,
+      12,
+      12,
+    );
+    p.pop();
   };
 
   p.windowResized = () => {

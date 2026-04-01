@@ -5,9 +5,9 @@
 
 import { sendTrackingCommand, onMarkerWsOpen } from './markerStream.js';
 
-const MAX_WIDTH = 720;
-const INTERVAL_MS = 70;
-const JPEG_QUALITY = 0.72;
+const MAX_WIDTH = 960;
+const INTERVAL_MS = 50;
+const JPEG_QUALITY = 0.9;
 
 let timer = null;
 const canvas = document.createElement('canvas');

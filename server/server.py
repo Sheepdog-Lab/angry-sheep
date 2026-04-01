@@ -125,7 +125,7 @@ detector = (
     else None
 )
 
-ALLOWED_MARKER_IDS = frozenset(range(0, 11))
+ALLOWED_MARKER_IDS = None
 
 
 def preprocess_for_detection(frame_bgr):

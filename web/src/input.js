@@ -1,6 +1,7 @@
 import { TOOL_COLORS, TOOL_HIT_RADIUS, TOOL_ROTATE_STEP, TABLE_RADIUS, INITIAL_TOOLS } from './config.js';
 import { hitTest } from './tools.js';
 import * as Session from './session.js';
+import { getGameMode, onGameModeChange } from './gameMode.js';
 
 // -- State (matches shared contract) --
 const state = {
@@ -19,6 +20,7 @@ let dragOffsetX = 0;
 let dragOffsetY = 0;
 let mouseIsDown = false;
 let voiceActive = false;
+let savedDigitalTools = [];
 
 // -- Public API --
 
@@ -43,6 +45,7 @@ export function init(p, size) {
     ...t,
     id: i,
   }));
+  savedDigitalTools = cloneTools(state.tools);
 
   p.mousePressed = onMousePressed;
   p.mouseDragged = onMouseDragged;
@@ -52,6 +55,7 @@ export function init(p, size) {
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('keyup', onKeyUp);
   document.addEventListener('contextmenu', (e) => e.preventDefault());
+  onGameModeChange(handleModeChange);
 }
 
 export function updateCanvasSize(size) {
@@ -59,6 +63,7 @@ export function updateCanvasSize(size) {
 }
 
 export function setToolCount(type, count) {
+  if (getGameMode() !== 'digital') return;
   const current = state.tools.filter((t) => t.type === type);
   const diff = count - current.length;
   if (diff > 0) {
@@ -86,6 +91,11 @@ export function setToolCount(type, count) {
       }
     }
   }
+}
+
+export function setPhysicalTools(tools) {
+  if (getGameMode() !== 'physical') return;
+  state.tools = cloneTools(tools);
 }
 
 /**
@@ -118,6 +128,32 @@ function normalize(px, py) {
   return { x: px / canvasSize, y: py / canvasSize };
 }
 
+function cloneTools(tools) {
+  return tools.map((tool) => ({ ...tool }));
+}
+
+function resetInteractionState() {
+  dragId = null;
+  hoveredId = null;
+  mouseIsDown = false;
+  voiceActive = false;
+  state.voice.active = false;
+  state.voice.sentiment = null;
+  state.pet.active = false;
+  state.pet.x = null;
+  state.pet.y = null;
+}
+
+function handleModeChange(mode) {
+  resetInteractionState();
+  if (mode === 'physical') {
+    savedDigitalTools = cloneTools(state.tools);
+    state.tools = [];
+    return;
+  }
+  state.tools = cloneTools(savedDigitalTools);
+}
+
 function isInsideCanvas(px, py) {
   return px >= 0 && px <= canvasSize && py >= 0 && py <= canvasSize;
 }
@@ -125,6 +161,7 @@ function isInsideCanvas(px, py) {
 // -- Event handlers --
 
 function onMousePressed() {
+  if (getGameMode() !== 'digital') return;
   const p = p5Ref;
   if (!isInsideCanvas(p.mouseX, p.mouseY)) return;
   if (p.mouseButton !== p.LEFT) return;
@@ -149,6 +186,7 @@ function onMousePressed() {
 }
 
 function onMouseDragged() {
+  if (getGameMode() !== 'digital') return;
   if (dragId === null) return;
   const p = p5Ref;
   const n = normalize(p.mouseX, p.mouseY);
@@ -161,6 +199,10 @@ function onMouseDragged() {
 }
 
 function onMouseReleased() {
+  if (getGameMode() !== 'digital') {
+    resetInteractionState();
+    return;
+  }
   dragId = null;
   mouseIsDown = false;
   state.pet.active = false;
@@ -169,6 +211,7 @@ function onMouseReleased() {
 }
 
 function onMouseWheel(event) {
+  if (getGameMode() !== 'digital') return;
   const p = p5Ref;
   const n = normalize(p.mouseX, p.mouseY);
   const id = hitTest(state.tools, n.x, n.y);
@@ -189,6 +232,8 @@ function onKeyDown(event) {
     return;
   }
 
+  if (getGameMode() !== 'digital') return;
+
   if (event.key === 'r' || event.key === 'R') {
     if (hoveredId !== null) {
       const tool = state.tools.find((t) => t.id === hoveredId);
@@ -204,6 +249,7 @@ function onKeyDown(event) {
 }
 
 function onKeyUp(event) {
+  if (getGameMode() !== 'digital') return;
   if (event.key === 'v' || event.key === 'V') {
     voiceActive = false;
     state.voice.active = false;
@@ -215,6 +261,13 @@ function onKeyUp(event) {
  * Call each frame to update hoveredId and petting state.
  */
 export function updateHover(p) {
+  if (getGameMode() !== 'digital') {
+    hoveredId = null;
+    state.pet.active = false;
+    state.pet.x = null;
+    state.pet.y = null;
+    return;
+  }
   if (!isInsideCanvas(p.mouseX, p.mouseY)) {
     hoveredId = null;
     return;

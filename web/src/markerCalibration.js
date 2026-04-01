@@ -1,6 +1,7 @@
 const STORAGE_KEY = 'angrySheepMarkerCalibration';
 const OFFSET_STEP = 10;
 const SCALE_STEP = 0.05;
+const ROTATION_FINE_STEP = 5;
 const MIN_SCALE = 0.1;
 
 let offsetX = 0;
@@ -83,6 +84,14 @@ function onKeyDown(e) {
       rotation = (rotation + 90) % 360;
       changed = true;
       break;
+    case '[':
+      rotation = (((rotation - ROTATION_FINE_STEP) % 360) + 360) % 360;
+      changed = true;
+      break;
+    case ']':
+      rotation = (rotation + ROTATION_FINE_STEP) % 360;
+      changed = true;
+      break;
     default:
       break;
   }
@@ -111,22 +120,11 @@ export function applyMarkerCalibration(x, y, canvasSize) {
   const dx = tx - cx;
   const dy = ty - cy;
 
-  switch (rotation) {
-    case 90:
-      tx = cx + dy;
-      ty = cy - dx;
-      break;
-    case 180:
-      tx = cx - dx;
-      ty = cy - dy;
-      break;
-    case 270:
-      tx = cx - dy;
-      ty = cy + dx;
-      break;
-    default:
-      break;
-  }
+  const rad = (rotation * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  tx = cx + (dx * cos) - (dy * sin);
+  ty = cy + (dx * sin) + (dy * cos);
 
   return {
     x: (tx * scale) + offsetX,

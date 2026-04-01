@@ -1,0 +1,61 @@
+import { TOOL_COLORS } from './config.js';
+import { applyMarkerCalibration } from './markerCalibration.js';
+
+const SHEEPDOG_IDS = new Set([0, 1, 2, 3]);
+const GRASS_IDS = new Set([4, 5]);
+
+export function getObjectTypeFromMarker(id) {
+  if (SHEEPDOG_IDS.has(id)) return 'sheepdog';
+  if (GRASS_IDS.has(id)) return 'grass';
+  if (id >= 6 && id <= 11) return 'block';
+  return null;
+}
+
+export function mapMarkerToCanvas(mx, my, canvasSize, frameW, frameH, mirrorX) {
+  if (!frameW || !frameH) return { x: 0, y: 0 };
+  let x = (mx / frameW) * canvasSize;
+  const y = (my / frameH) * canvasSize;
+  if (mirrorX) x = canvasSize - x;
+  return { x, y };
+}
+
+export function buildPhysicalTools(markers, canvasSize, frameW, frameH, mirrorX) {
+  return markers
+    .map((marker) => {
+      const type = getObjectTypeFromMarker(marker.id);
+      if (!type) return null;
+      const mapped = mapMarkerToCanvas(marker.x, marker.y, canvasSize, frameW, frameH, mirrorX);
+      const calibrated = applyMarkerCalibration(mapped.x, mapped.y, canvasSize);
+      return {
+        id: marker.id,
+        markerId: marker.id,
+        type,
+        x: Math.max(0, Math.min(1, calibrated.x / canvasSize)),
+        y: Math.max(0, Math.min(1, calibrated.y / canvasSize)),
+        angle_deg: typeof marker.angle_deg === 'number' ? marker.angle_deg : 0,
+      };
+    })
+    .filter(Boolean);
+}
+
+export function drawPhysicalToolVisuals(p, tools, canvasSize) {
+  for (const tool of tools) {
+    const px = tool.x * canvasSize;
+    const py = tool.y * canvasSize;
+    const color =
+      tool.type === 'sheepdog' ? '#ffffff' :
+      tool.type === 'grass' ? TOOL_COLORS.grass :
+      '#b0b0b0';
+    p.push();
+    p.fill(color);
+    p.stroke(0, 0, 0, 180);
+    p.strokeWeight(2);
+    p.circle(px, py, 18);
+    p.noStroke();
+    p.fill(255);
+    p.textAlign(p.CENTER, p.BOTTOM);
+    p.textSize(12);
+    p.text(String(tool.markerId ?? tool.id), px, py - 10);
+    p.pop();
+  }
+}

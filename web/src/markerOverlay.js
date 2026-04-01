@@ -25,7 +25,7 @@ function mapToCanvas(mx, my, canvasSize, fw, fh, mirrorX) {
  * Draw ArUco marker positions as dots above the playfield and black overscan mask.
  */
 export function drawMarkerOverlay(p, canvasSize) {
-  const { connected, frameW, frameH, markers } = getMarkerStreamState();
+  const { connected, frameW, frameH, markers, rawMarkers } = getMarkerStreamState();
   const { mirrorX, dotRadiusPx, showLabels } = MARKER_STREAM;
   const calibration = getMarkerCalibration();
 
@@ -76,9 +76,11 @@ export function drawMarkerOverlay(p, canvasSize) {
     : hasDots
       ? 'ArUco: reconnecting…'
       : 'ArUco: …';
+  const rawIds = rawMarkers.map((m) => m.id).join(', ') || 'none';
   const debug =
     `offsetX ${calibration.offsetX}  offsetY ${calibration.offsetY}\n` +
-    `scale ${calibration.scale.toFixed(2)}  flipX ${calibration.flipX}  flipY ${calibration.flipY}  rot ${calibration.rotation}`;
+    `scale ${calibration.scale.toFixed(2)}  flipX ${calibration.flipX}  flipY ${calibration.flipY}  rot ${calibration.rotation}\n` +
+    `raw IDs ${rawIds}`;
   p.text(`${tag}\n${debug}`, canvasSize - 8, 8);
   p.pop();
 }

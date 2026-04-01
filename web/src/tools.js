@@ -131,6 +131,32 @@ export function drawTools(p, tools, canvasSize, hoveredId, flock) {
   }
 }
 
+export function drawPhysicalTools(p, tools, canvasSize) {
+  for (const tool of tools) {
+    const px = tool.x * canvasSize;
+    const py = tool.y * canvasSize;
+    let color = '#ffffff';
+    if (tool.type === 'grass') color = '#4caf50';
+    if (tool.type === 'block') color = '#9aa0a6';
+
+    p.push();
+    p.translate(px, py);
+    p.rotate(p.radians(tool.angle_deg || 0));
+    p.fill(color);
+    p.stroke(255, 255, 255, 210);
+    p.strokeWeight(2);
+    p.circle(0, 0, 20);
+    p.stroke(255, 255, 255, 180);
+    p.line(0, 0, 12, 0);
+    p.noStroke();
+    p.fill(255);
+    p.textSize(12);
+    p.textAlign(p.CENTER, p.BOTTOM);
+    p.text(String(tool.markerId ?? tool.id), 0, -12);
+    p.pop();
+  }
+}
+
 function drawBlock(p, s) {
   const w = TOOL_SIZES.block.w * s;
   const h = TOOL_SIZES.block.h * s;

@@ -252,16 +252,16 @@ export const MARKER_STREAM = {
   dotRadiusPx: 10,
   showLabels: true,
   /**
-   * Only accept these ArUco IDs (stops false positives like random 17 / 37 on noise).
-   * null = accept any id. Keep in sync with printed markers + server ALLOWED_MARKER_IDS.
+   * null = accept any detected marker id so debug overlays can show everything.
+   * Physical-mode object mapping still decides which IDs become game objects.
    */
-  allowedMarkerIds: Object.freeze(new Set([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])),
-  /** 0–1: higher = snappier, lower = less jitter (reduces flicker) */
-  smoothAlpha: 0.22,
-  /** Server ~30Hz: ~18 ≈ 0.6s grace before a dot disappears after a missed detect */
-  holdMissFrames: 18,
-  /** Ignore jumps larger than this (px in camera space) — kills spurious blips */
-  maxJumpPx: 180,
+  allowedMarkerIds: null,
+  /** 0–1: lower = stickier smoothing with less visible jitter */
+  smoothAlpha: 0.16,
+  /** Hold detections longer before hiding them to reduce blinking */
+  holdMissFrames: 45,
+  /** Ignore only very large jumps to keep distant markers from vanishing */
+  maxJumpPx: 260,
 };
 
 // -- Session --

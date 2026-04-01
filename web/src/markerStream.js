@@ -5,6 +5,7 @@ let reconnectTimer = null;
 let connected = false;
 let frameW = 640;
 let frameH = 480;
+let rawMarkers = [];
 
 /** @type {Map<number, { x: number, y: number, miss: number, id: number }>} */
 const stableById = new Map();
@@ -143,6 +144,9 @@ export function connectMarkerStream() {
         }
         list = Array.isArray(data.markers) ? data.markers : [];
       }
+      rawMarkers = list.filter(
+        (m) => m && typeof m.id === 'number' && typeof m.x === 'number' && typeof m.y === 'number',
+      );
       applySmoothing(list);
     } catch (e) {
       /* ignore bad frames */
@@ -165,6 +169,7 @@ export function getMarkerStreamState() {
     connected,
     frameW,
     frameH,
+    rawMarkers,
     markers: stableMarkersForDraw(),
   };
 }
@@ -180,6 +185,7 @@ if (import.meta.hot) {
       socket = null;
     }
     connected = false;
+    rawMarkers = [];
     stableById.clear();
   });
 }
