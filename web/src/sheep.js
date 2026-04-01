@@ -67,7 +67,7 @@ export function updateFlock(input) {
     applySeparation(sheep);
     applyEdgeBounce(sheep);
     applyToolReactions(sheep, tools);
-    applyCrisisPenEscape(sheep);
+    applyCrisisPenEscape(sheep, tools);
     applyPenFenceCollision(sheep);
     applyDeescalation(sheep, tools, voice, pet);
     applyStressTracking(sheep, tools);
@@ -400,27 +400,67 @@ function applyEdgeBounce(sheep) {
   }
 }
 
-/** Angry sheep actively flee the pen — slide along walls until finding a gap.
- *  Triggers at half crisis threshold (agitated) with weaker force, full force at crisis. */
-function applyCrisisPenEscape(sheep) {
+/** Crisis sheep inside/near the pen steer toward the nearest unblocked gap and bolt out. */
+function applyCrisisPenEscape(sheep, tools) {
   if (sheep.captured) return;
-  const halfThresh = SHEEP.crisisThreshold * 0.7;
-  if (sheep.stress < halfThresh) return;
+  if (sheep.stress < SHEEP.crisisThreshold) return;
   const info = penEdgeInfo(sheep.x, sheep.y);
+  // Only act when inside or very close to the pen fence
   if (info.dist >= PEN.radius + SHEEP.penFenceThickness) return;
-  // Scale force: half at 50% stress, full at crisis threshold
-  const t = Math.min((sheep.stress - halfThresh) / halfThresh, 1);
-  const force = SHEEP.crisisPenEscapeForce * (0.5 + 0.5 * t);
-  // Push outward from pen center
-  const dx = sheep.x - PEN.cx;
-  const dy = sheep.y - PEN.cy;
-  const d = info.dist < 1e-6 ? 1e-6 : info.dist;
-  const ux = dx / d;
-  const uy = dy / d;
-  sheep.vx += ux * force;
-  sheep.vy += uy * force;
-  // Redirect wander angle outward
-  sheep.wanderAngle = Math.atan2(uy, ux) + (Math.random() - 0.5) * 0.4;
+
+  // Build list of gaps sorted by angular distance, skip blocked ones
+  const blockRadius = 0.06;
+  const candidates = [];
+  for (const [gs, ge] of PEN.gaps) {
+    let mid;
+    if (gs > ge) {
+      mid = (gs + ge + 360) / 2;
+      if (mid >= 360) mid -= 360;
+    } else {
+      mid = (gs + ge) / 2;
+    }
+    let diff = mid - info.angleDeg;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+
+    // Check if a tool is blocking this gap
+    const gapRad = (mid * Math.PI) / 180;
+    const gapX = PEN.cx + Math.cos(gapRad) * PEN.radius;
+    const gapY = PEN.cy + Math.sin(gapRad) * PEN.radius;
+    let blocked = false;
+    for (const tool of tools) {
+      const tdx = tool.x - gapX;
+      const tdy = tool.y - gapY;
+      if (Math.sqrt(tdx * tdx + tdy * tdy) < blockRadius) {
+        blocked = true;
+        break;
+      }
+    }
+
+    candidates.push({ mid, angDist: Math.abs(diff), blocked });
+  }
+
+  // Sort by angular distance, prefer unblocked
+  candidates.sort((a, b) => {
+    if (a.blocked !== b.blocked) return a.blocked ? 1 : -1;
+    return a.angDist - b.angDist;
+  });
+
+  const chosen = candidates[0];
+  if (!chosen) return;
+
+  // Steer toward the chosen gap's position just outside the pen edge
+  const gapRad = (chosen.mid * Math.PI) / 180;
+  const targetX = PEN.cx + Math.cos(gapRad) * (PEN.radius + 0.02);
+  const targetY = PEN.cy + Math.sin(gapRad) * (PEN.radius + 0.02);
+  const dx = targetX - sheep.x;
+  const dy = targetY - sheep.y;
+  const d = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+
+  const force = SHEEP.crisisPenEscapeForce * 2.5;
+  sheep.vx += (dx / d) * force;
+  sheep.vy += (dy / d) * force;
+  sheep.wanderAngle = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.15;
 }
 
 /** Free sheep mildly avoid pen area so they don't wander in accidentally. */
