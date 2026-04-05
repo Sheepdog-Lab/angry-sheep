@@ -1,3 +1,6 @@
+import calmingFeedingAsset from './assets/calming-feeding.png';
+import calmingPettingAsset from './assets/calming-petting.png';
+
 // -- Canvas --
 export const CANVAS_BG_COLOR = '#2d5a1b';
 /** Served from `web/public/` (Vite → URL root). */
@@ -23,6 +26,13 @@ export const VICTORY_S2_URL = `/victory-s2.png?v=${_v}`;
 export const VICTORY_S3_URL = `/victory-s3.png?v=${_v}`;
 /** Shepherd + wooden sign; bottom of play area only (not mixed with sheep cluster). */
 export const VICTORY_BANNER_URL = `/victory-banner.png?v=${_v}`;
+/**
+ * Calming cue PNGs (feeding + petting). Imported from `web/src/assets/` so Vite emits
+ * stable hashed URLs in dev/prod (works with any `base` path; avoids `/` root 404s).
+ * @see setCalmingCueSprites (sheep.js), setCrisisHintCueSprites (session.js)
+ */
+export const CALMING_FEEDING_URL = calmingFeedingAsset;
+export const CALMING_PETTING_URL = calmingPettingAsset;
 export const MASK_COLOR = '#000000'; // black outside the table circle
 
 // -- Pen / Corral (circular with gaps) --
@@ -241,6 +251,71 @@ export const SHEEP = {
   splitMaxFlock: 22,        // don't split beyond this many total sheep
   // Hints
   crisisHintDelay: 60 * 3,  // frames of unresolved crisis before hint appears (~3s at 60fps)
+  /**
+   * Pet / feed interaction: outward bloom VFX + linked sheep motion (see sheep.js).
+   * `u` = normalized time 0→1 over petFrames / feedFrames.
+   */
+  interactionFeedback: {
+    petFrames: 40,
+    feedFrames: 36,
+    petCooldownFrames: 32,
+    feedCooldownFrames: 28,
+    /** Global strength multipliers (0.5–1.5 typical) */
+    petIntensity: 1.05,
+    feedIntensity: 1.05,
+    /** Outward expansion: u is scaled by expandSpeed then eased with expandPower */
+    vfxExpandSpeed: 1.75,
+    vfxExpandPower: 2.35,
+    /** Alpha envelope: after fadeStart (0–1), opacity falls with fadePower */
+    vfxFadeStart: 0.5,
+    vfxFadePower: 1.45,
+    /** Sheep body motion (fraction of r / radians); scaled by bodyPulse */
+    petBounceR: 0.46,
+    feedBounceR: 0.36,
+    petSquashStretchX: 0.14,
+    petSquashStretchY: 0.12,
+    feedNibbleLean: 0.24,
+    feedSquashStretchX: 0.09,
+    feedSquashStretchY: 0.095,
+    feedForwardNudgeR: 0.16,
+    petAffectionWiggle: 0.14,
+    petHappyTintBoost: 0.24,
+    feedHappyTintBoost: 0.17,
+    relaxImpulse: 0.00052,
+    /** Bloom radii are multiples of body radius r (min = spawn, max = expanded) */
+    petBloomRadiusMin: 0.42,
+    petBloomRadiusMax: 2.75,
+    feedBloomRadiusMin: 0.45,
+    feedBloomRadiusMax: 2.45,
+    /** Heart / sparkle size: base r-multiple × (1 + expand × expandScale) */
+    petHeartBaseSize: 0.34,
+    petHeartExpandScale: 1.05,
+    feedSparkleBaseSize: 0.095,
+    feedSparkleExpandScale: 0.85,
+    petHeartCount: 8,
+    feedSparkleCount: 11,
+    petGlowRingCount: 3,
+    feedGlowRingCount: 2,
+    /** Glow ring scales (relative to r) at min / max expansion */
+    petGlowStartScale: 0.32,
+    petGlowMaxScale: 2.65,
+    feedGlowStartScale: 0.36,
+    feedGlowMaxScale: 2.35,
+    /** Vertical anchor above sheep center (r multiples) */
+    petEmitY: -1.22,
+    feedEmitY: -1.18,
+    /** Horizontal squash for elliptical bloom */
+    petBloomAspect: 0.58,
+    feedBloomAspect: 0.62,
+    /** Slow orbit / drift (radians per unit u) */
+    petOrbitDrift: 0.85,
+    feedOrbitDrift: 1.1,
+    /** Max opacity for particles (0–1) */
+    petEffectOpacity: 0.98,
+    feedEffectOpacity: 0.96,
+    petGlowOpacity: 0.55,
+    feedGlowOpacity: 0.48,
+  },
 };
 
 // -- ArUco overlay (server.py WebSocket) --

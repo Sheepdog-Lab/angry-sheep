@@ -15,12 +15,21 @@ import {
   VICTORY_S3_URL,
   VICTORY_BANNER_URL,
   TERRAIN_GRASS_CLUMP_URL,
+  CALMING_FEEDING_URL,
+  CALMING_PETTING_URL,
   SESSION,
 } from './config.js';
 import * as Input from './input.js';
 import { drawPen, setPenSprite } from './pen.js';
 import { drawTools, setGrassSprite, setSheepdogSprite, setBlockSprite } from './tools.js';
-import { updateFlock, drawFlock, setSheepSprite, getFlock, isAnySheepEating } from './sheep.js';
+import {
+  updateFlock,
+  drawFlock,
+  setSheepSprite,
+  setCalmingCueSprites,
+  getFlock,
+  isAnySheepEating,
+} from './sheep.js';
 import * as Session from './session.js';
 import { initTuning } from './tuning.js';
 import { connectMarkerStream, getMarkerStreamState } from './markerStream.js';
@@ -128,6 +137,10 @@ new p5((p) => {
   let victoryBannerImg = null;
   /** @type {import('p5').Image | null} */
   let terrainGrassClumpImg = null;
+  /** @type {import('p5').Image | null} */
+  let calmingFeedingImg = null;
+  /** @type {import('p5').Image | null} */
+  let calmingPettingImg = null;
 
   p.preload = () => {
     terrainImg = p.loadImage(TERRAIN_TEXTURE_URL);
@@ -141,6 +154,8 @@ new p5((p) => {
     victoryS3Img = p.loadImage(VICTORY_S3_URL);
     victoryBannerImg = p.loadImage(VICTORY_BANNER_URL);
     terrainGrassClumpImg = p.loadImage(TERRAIN_GRASS_CLUMP_URL);
+    calmingFeedingImg = p.loadImage(CALMING_FEEDING_URL);
+    calmingPettingImg = p.loadImage(CALMING_PETTING_URL);
   };
 
   p.setup = () => {
@@ -148,6 +163,8 @@ new p5((p) => {
     canvasEl = p.createCanvas(canvasSize, canvasSize);
     canvasEl.parent('gameStage');
     setSheepSprite(sheepImg);
+    setCalmingCueSprites({ feeding: calmingFeedingImg, petting: calmingPettingImg });
+    Session.setCrisisHintCueSprites({ feeding: calmingFeedingImg, petting: calmingPettingImg });
     setSheepdogSprite(sheepdogImg);
     setGrassSprite(grassImg);
     setBlockSprite(blockImg);

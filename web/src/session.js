@@ -14,10 +14,21 @@ let victorySprites = {
   banner: null,
 };
 
+/** Crisis hint bubbles (same PNGs as sheep calming cues); set from main after preload. */
+let hintCueSprites = {
+  feeding: null,
+  petting: null,
+};
+
 // -- Public API --
 
 export function setVictoryCelebrationSprites(sprites) {
   victorySprites = { ...victorySprites, ...sprites };
+}
+
+/** @param {{ feeding?: import('p5').Image | null; petting?: import('p5').Image | null }} imgs */
+export function setCrisisHintCueSprites(imgs) {
+  hintCueSprites = { feeding: imgs.feeding ?? null, petting: imgs.petting ?? null };
 }
 
 /** Skip win outro early (keyboard). */
@@ -166,29 +177,15 @@ function drawHints(p, s) {
     p.push();
     p.translate(px, bubbleY + bob);
 
-    // Bubble background
-    p.fill(255, 255, 255, 210);
-    p.noStroke();
-    p.ellipse(0, 0, s * 0.05, s * 0.04);
-
-    // Alternate between grass and pet hint icons
     const showGrass = (Math.floor(frameCounter / 90) % 2) === 0;
-    if (showGrass) {
-      // Grass icon
-      p.stroke('#4caf50');
-      p.strokeWeight(2);
-      p.line(0, s * 0.006, 0, -s * 0.01);
-      p.line(0, 0, -s * 0.006, -s * 0.008);
-      p.line(0, 0, s * 0.006, -s * 0.008);
-    } else {
-      // Hand/pet icon (open palm)
-      p.noStroke();
-      p.fill('#e89040');
-      p.ellipse(0, 0, s * 0.018, s * 0.015);
-      // Fingers
-      for (let i = -2; i <= 1; i++) {
-        p.ellipse(i * s * 0.004, -s * 0.01, s * 0.005, s * 0.01);
-      }
+    const cueImg = showGrass ? hintCueSprites.feeding : hintCueSprites.petting;
+    if (cueImg && cueImg.width > 2 && cueImg.height > 2) {
+      const maxSide = s * 0.078;
+      const sc = Math.min(maxSide / cueImg.width, maxSide / cueImg.height);
+      const iw = cueImg.width * sc;
+      const ih = cueImg.height * sc;
+      p.imageMode(p.CENTER);
+      p.image(cueImg, 0, 0, iw, ih);
     }
 
     p.pop();

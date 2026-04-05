@@ -10,12 +10,26 @@ let nextSheepId = 0;
 /** @type {import('p5').Image | null} */
 let sheepSprite = null;
 
+/** Calming cue art (`web/public/calming-*.png`); URLs in config. */
+/** @type {import('p5').Image | null} */
+let calmingFeedingImg = null;
+/** @type {import('p5').Image | null} */
+let calmingPettingImg = null;
+
 /**
  * Called from main.js after preload so flock drawing can use the PNG sprite.
  * @param {import('p5').Image | null} img
  */
 export function setSheepSprite(img) {
   sheepSprite = img;
+}
+
+/**
+ * @param {{ feeding?: import('p5').Image | null; petting?: import('p5').Image | null }} imgs
+ */
+export function setCalmingCueSprites(imgs) {
+  calmingFeedingImg = imgs?.feeding ?? null;
+  calmingPettingImg = imgs?.petting ?? null;
 }
 
 // -- Public API --
@@ -70,6 +84,7 @@ export function updateFlock(input) {
     applyCrisisPenEscape(sheep, tools);
     applyPenFenceCollision(sheep);
     applyDeescalation(sheep, tools, voice, pet);
+    updateInteractionFeedback(sheep);
     applyStressTracking(sheep, tools);
     applyPenCapture(sheep);
     move(sheep);
@@ -157,6 +172,16 @@ function makeSheep(x, y, stress, opts = {}) {
     stress: stress,            // 0 = calm, >= crisisThreshold = crisis
     dogPushCount: 0,           // consecutive dog pushes while in crisis (for splitting)
     beingPetted: false,        // set each frame by de-escalation check
+    /** @type {null | 'pet' | 'grass' | 'voice'} active calming feedback (set in applyDeescalation) */
+    _calmingKind: null,
+    /** One-shot pet/feed delight animation (frames remaining); see interactionFeedback in config */
+    _petReactT: 0,
+    _feedReactT: 0,
+    _prevBeingPetted: false,
+    _prevEating: false,
+    _prevGrassCalm: false,
+    _lastPetFeedbackTick: -999999,
+    _lastFeedFeedbackTick: -999999,
     _splitPending: false,
     _crisisFrames: 0,          // frames spent in crisis (for hint system)
     _tick: 0,
@@ -625,10 +650,14 @@ function applyToolReactions(sheep, tools) {
 }
 
 function applyDeescalation(sheep, tools, voice, pet) {
+  sheep._calmingKind = null;
+
   if (sheep.stress <= 0) {
     sheep.beingPetted = false;
     return;
   }
+
+  let grassCalming = false;
 
   // Grass calming: any grass within calm radius reduces stress
   for (const tool of tools) {
@@ -638,6 +667,7 @@ function applyDeescalation(sheep, tools, voice, pet) {
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < SHEEP.grassCalmRadius) {
         sheep.stress = Math.max(0, sheep.stress - SHEEP.grassCalmRate);
+        grassCalming = true;
       }
     }
   }
@@ -658,6 +688,52 @@ function applyDeescalation(sheep, tools, voice, pet) {
   if (voice && voice.active && voice.sentiment === 'positive') {
     sheep.stress = Math.max(0, sheep.stress - SHEEP.voiceCalmRate);
   }
+
+  // One clear feedback variant: most direct interaction wins
+  if (sheep.beingPetted) {
+    sheep._calmingKind = 'pet';
+  } else if (grassCalming) {
+    sheep._calmingKind = 'grass';
+  } else if (voice && voice.active && voice.sentiment === 'positive') {
+    sheep._calmingKind = 'voice';
+  }
+}
+
+function updateInteractionFeedback(sheep) {
+  const IF = SHEEP.interactionFeedback;
+  const prevPet = sheep._petReactT;
+  const prevFeed = sheep._feedReactT;
+
+  if (sheep._petReactT > 0) sheep._petReactT--;
+  if (sheep._feedReactT > 0) sheep._feedReactT--;
+
+  if (prevPet === 1 && sheep._petReactT === 0) {
+    sheep.vx += (Math.random() - 0.5) * IF.relaxImpulse * 2.2;
+    sheep.vy += (Math.random() - 0.5) * IF.relaxImpulse * 2.2;
+  }
+  if (prevFeed === 1 && sheep._feedReactT === 0) {
+    sheep.vx += (Math.random() - 0.5) * IF.relaxImpulse * 2.2;
+    sheep.vy += (Math.random() - 0.5) * IF.relaxImpulse * 2.2;
+  }
+
+  const grassCalmNow = sheep._calmingKind === 'grass';
+  const petEdge = sheep.beingPetted && !sheep._prevBeingPetted;
+  const feedEdge =
+    (sheep._isEating && !sheep._prevEating) ||
+    (grassCalmNow && !sheep._prevGrassCalm && sheep.stress > 0);
+
+  if (petEdge && sheep._tick - sheep._lastPetFeedbackTick >= IF.petCooldownFrames) {
+    sheep._petReactT = IF.petFrames;
+    sheep._lastPetFeedbackTick = sheep._tick;
+  }
+  if (feedEdge && sheep._tick - sheep._lastFeedFeedbackTick >= IF.feedCooldownFrames) {
+    sheep._feedReactT = IF.feedFrames;
+    sheep._lastFeedFeedbackTick = sheep._tick;
+  }
+
+  sheep._prevBeingPetted = sheep.beingPetted;
+  sheep._prevEating = !!sheep._isEating;
+  sheep._prevGrassCalm = grassCalmNow;
 }
 
 function applyStressTracking(sheep, tools) {
@@ -791,6 +867,27 @@ function move(sheep) {
 
 // -- Drawing --
 
+/** u = 0…1 over reaction; fast ease-out expansion (bloom outward). */
+function vfxExpandT(u, speed, power) {
+  if (u <= 0) return 0;
+  const x = Math.min(1, u * speed);
+  return 1 - (1 - x) ** power;
+}
+
+/** Soft fade after vfxFadeStart (0…1). */
+function vfxAlphaEnvelope(u, fadeStart, fadePower) {
+  if (u <= 0) return 0;
+  if (u <= fadeStart) return 1;
+  const t = (u - fadeStart) / (1 - fadeStart);
+  return (1 - t) ** fadePower;
+}
+
+/** Linked sheep squash/bounce: peaks mid-reaction, fades with envelope. */
+function interactionBodyPulse(u, IF) {
+  if (u <= 0) return 0;
+  return Math.sin(u * Math.PI) * vfxAlphaEnvelope(u, IF.vfxFadeStart, IF.vfxFadePower);
+}
+
 function drawSheep(p, sheep, canvasSize) {
   const s = canvasSize;
   const px = sheep.x * s;
@@ -827,35 +924,93 @@ function drawSheep(p, sheep, canvasSize) {
   }
 
   const facing = sheep.facing;
+  const IF = SHEEP.interactionFeedback;
+  const petRem = sheep._petReactT;
+  const feedRem = sheep._feedReactT;
+  const uPet = petRem > 0 ? 1 - petRem / IF.petFrames : 0;
+  const uFeed = feedRem > 0 ? 1 - feedRem / IF.feedFrames : 0;
+  const petPulse = petRem > 0 ? interactionBodyPulse(uPet, IF) * IF.petIntensity : 0;
+  const feedPulse = feedRem > 0 ? interactionBodyPulse(uFeed, IF) * IF.feedIntensity : 0;
+  const happyBoost =
+    petPulse * IF.petHappyTintBoost + feedPulse * IF.feedHappyTintBoost;
 
   if (sheepSprite && sheepSprite.width > 0) {
     // Asset faces “up”; align with movement direction
     p.push();
     p.rotate(facing + Math.PI / 2);
+    const bounce = (petPulse * IF.petBounceR + feedPulse * IF.feedBounceR) * r;
+    p.translate(0, -bounce);
+    p.translate(
+      petPulse * IF.petAffectionWiggle * r * 0.22 * Math.sin(sheep._tick * 0.92 + sheep.id * 1.7),
+      feedPulse * IF.feedForwardNudgeR * r,
+    );
+    p.rotate(
+      feedPulse * IF.feedNibbleLean +
+        petPulse * IF.petAffectionWiggle * Math.sin(sheep._tick * 0.88 + sheep.id),
+    );
+    const sx =
+      1 +
+      petPulse * IF.petSquashStretchX +
+      feedPulse * IF.feedSquashStretchX;
+    const sy =
+      1 -
+      petPulse * IF.petSquashStretchY -
+      feedPulse * IF.feedSquashStretchY;
+    p.scale(sx, sy);
     const size = r * 2.4;
     p.imageMode(p.CENTER);
     if (inCrisis) {
       p.tint(255, 110, 95, 255);
-    } else if (stressRatio < 0.5) {
-      const t = stressRatio * 2;
-      p.tint(255, Math.round(255 - t * 45), Math.round(255 - t * 70), 255);
     } else {
-      const t = (stressRatio - 0.5) * 2;
-      p.tint(
-        255,
-        Math.round(210 - t * 90),
-        Math.round(185 - t * 115),
-        255,
-      );
+      let tr = 255;
+      let tg;
+      let tb;
+      if (stressRatio < 0.5) {
+        const t = stressRatio * 2;
+        tg = Math.round(255 - t * 45);
+        tb = Math.round(255 - t * 70);
+      } else {
+        const t = (stressRatio - 0.5) * 2;
+        tg = Math.round(210 - t * 90);
+        tb = Math.round(185 - t * 115);
+      }
+      if (happyBoost > 0.01) {
+        tg = Math.min(255, Math.round(tg + happyBoost * 42));
+        tb = Math.min(255, Math.round(tb + happyBoost * 58));
+      }
+      p.tint(tr, tg, tb, 255);
     }
     p.image(sheepSprite, 0, 0, size, size);
     p.noTint();
     p.pop();
   } else {
+    p.push();
+    const bounce = (petPulse * IF.petBounceR + feedPulse * IF.feedBounceR) * r;
+    p.translate(0, -bounce);
+    p.translate(
+      petPulse * IF.petAffectionWiggle * r * 0.22 * Math.sin(sheep._tick * 0.92 + sheep.id * 1.7),
+      feedPulse * IF.feedForwardNudgeR * r,
+    );
+    p.rotate(
+      feedPulse * IF.feedNibbleLean +
+        petPulse * IF.petAffectionWiggle * Math.sin(sheep._tick * 0.88 + sheep.id),
+    );
+    const sx =
+      1 +
+      petPulse * IF.petSquashStretchX +
+      feedPulse * IF.feedSquashStretchX;
+    const sy =
+      1 -
+      petPulse * IF.petSquashStretchY -
+      feedPulse * IF.feedSquashStretchY;
+    p.scale(sx, sy);
     p.noStroke();
     p.fill(inCrisis ? '#e03030' : SHEEP.color);
     p.ellipse(0, 0, r * 1.6, r * 1.4);
+    p.pop();
   }
+
+  drawInteractionFeedbackEffects(p, sheep, r, petRem, feedRem);
 
   // Pen capture progress ring
   if (!sheep.captured && sheep.penFrames > 0 && sheep.stress < SHEEP.crisisThreshold) {
@@ -866,22 +1021,334 @@ function drawSheep(p, sheep, canvasSize) {
     p.arc(0, 0, r * 2.4, r * 2.4, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
   }
 
-  // Petting heart
-  if (sheep.beingPetted) {
-    p.fill(255, 100, 150, 200);
-    p.noStroke();
-    const hx = 0;
-    const hy = -r * 1.8 + Math.sin(p.frameCount * 0.1) * 3;
-    drawHeart(p, hx, hy, r * 0.5);
+  if (sheep._calmingKind) {
+    drawCalmingIndicator(p, sheep, r, sheep._calmingKind);
   }
 
   p.pop();
 }
 
-function drawHeart(p, x, y, size) {
+/**
+ * Outward bloom: elements spawn near sheep and move/scaling with expansion; alpha fades via envelope.
+ */
+function drawInteractionFeedbackEffects(p, sheep, r, petRem, feedRem) {
+  const IF = SHEEP.interactionFeedback;
+  if (petRem <= 0 && feedRem <= 0) return;
+
+  if (petRem > 0) {
+    const u = 1 - petRem / IF.petFrames;
+    drawPetInteractionBloom(p, sheep, r, u, IF);
+  }
+  if (feedRem > 0) {
+    const u = 1 - feedRem / IF.feedFrames;
+    drawFeedInteractionBloom(p, sheep, r, u, IF);
+  }
+}
+
+function drawPetInteractionBloom(p, sheep, r, u, IF) {
+  const exp = vfxExpandT(u, IF.vfxExpandSpeed, IF.vfxExpandPower);
+  const env = vfxAlphaEnvelope(u, IF.vfxFadeStart, IF.vfxFadePower);
+  const alpha = IF.petEffectOpacity * 255 * env * IF.petIntensity;
+  const glowA = IF.petGlowOpacity * 255 * env * IF.petIntensity;
+  const radMax =
+    r *
+    (IF.petBloomRadiusMin + exp * (IF.petBloomRadiusMax - IF.petBloomRadiusMin));
+  const emitY = IF.petEmitY * r;
+  const asp = IF.petBloomAspect;
+  const orbit = u * IF.petOrbitDrift + sheep._tick * 0.045 + sheep.id * 0.7;
+  const breathe = 1 + Math.sin(sheep._tick * 0.19 + sheep.id) * 0.06 * exp;
+
+  p.noStroke();
+  for (let k = 0; k < IF.petGlowRingCount; k++) {
+    const kf = 1 - k * 0.22;
+    const ringS =
+      IF.petGlowStartScale +
+      exp * (IF.petGlowMaxScale - IF.petGlowStartScale) * (0.72 + k * 0.14);
+    const ga = glowA * 0.22 * kf * kf * (0.55 + 0.45 * exp);
+    p.fill(255, 198, 218, ga);
+    p.ellipse(0, emitY, r * ringS * 2 * breathe * kf, r * ringS * 2 * asp * breathe * kf);
+    p.fill(255, 228, 238, ga * 0.55);
+    p.ellipse(0, emitY - r * 0.04 * exp, r * ringS * 1.45 * kf, r * ringS * 1.45 * asp * kf);
+  }
+
+  const n = IF.petHeartCount;
+  const radial = radMax * exp;
+  const hsBase =
+    r *
+    IF.petHeartBaseSize *
+    (0.5 + 0.5 * exp) *
+    (1 + exp * IF.petHeartExpandScale) *
+    IF.petIntensity;
+
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * Math.PI * 2 + orbit + Math.sin(u * 6.2 + i) * 0.08;
+    const px = Math.cos(ang) * radial;
+    const py = emitY + Math.sin(ang) * radial * asp;
+    const jitter = 1 + 0.08 * Math.sin(sheep._tick * 0.31 + i * 1.7);
+    const hs = hsBase * jitter;
+    const a = alpha * (0.88 + 0.12 * Math.sin(i * 1.3 + u * 8));
+    const outline = [110, 65, 78, a * 0.42];
+    drawHeart(
+      p,
+      px,
+      py,
+      hs,
+      [255, 125, 175, a],
+      i % 3 === 0 ? outline : null,
+    );
+  }
+
+  const spR = r * (0.09 + 0.06 * exp) * IF.petIntensity;
+  drawSparkle(
+    p,
+    Math.cos(orbit + 0.7) * radial * 0.55,
+    emitY + Math.sin(orbit + 0.7) * radial * asp * 0.55,
+    spR,
+    sheep._tick * 0.11 + u,
+    [255, 225, 175],
+    alpha * 0.92,
+  );
+  drawSparkle(
+    p,
+    Math.cos(orbit + 2.1) * radial * 0.62,
+    emitY + Math.sin(orbit + 2.1) * radial * asp * 0.62,
+    spR * 0.88,
+    sheep._tick * 0.09 - u,
+    [255, 245, 220],
+    alpha * 0.85,
+  );
+}
+
+function drawFeedInteractionBloom(p, sheep, r, u, IF) {
+  const exp = vfxExpandT(u, IF.vfxExpandSpeed, IF.vfxExpandPower);
+  const env = vfxAlphaEnvelope(u, IF.vfxFadeStart, IF.vfxFadePower);
+  const alpha = IF.feedEffectOpacity * 255 * env * IF.feedIntensity;
+  const glowA = IF.feedGlowOpacity * 255 * env * IF.feedIntensity;
+  const radMax =
+    r *
+    (IF.feedBloomRadiusMin + exp * (IF.feedBloomRadiusMax - IF.feedBloomRadiusMin));
+  const emitY = IF.feedEmitY * r;
+  const asp = IF.feedBloomAspect;
+  const orbit = u * IF.feedOrbitDrift + sheep._tick * 0.052 + sheep.id * 0.9;
+  const breathe = 1 + Math.sin(sheep._tick * 0.21 + sheep.id * 0.5) * 0.07 * exp;
+
+  p.noStroke();
+  for (let k = 0; k < IF.feedGlowRingCount; k++) {
+    const kf = 1 - k * 0.28;
+    const ringS =
+      IF.feedGlowStartScale +
+      exp * (IF.feedGlowMaxScale - IF.feedGlowStartScale) * (0.75 + k * 0.2);
+    const ga = glowA * 0.26 * kf * (0.5 + 0.5 * exp);
+    p.fill(185, 245, 205, ga);
+    p.ellipse(0, emitY, r * ringS * 2 * breathe * kf, r * ringS * 2 * asp * breathe * kf);
+    p.fill(235, 255, 225, ga * 0.45);
+    p.ellipse(0, emitY - r * 0.05 * exp, r * ringS * 1.35 * kf, r * ringS * 1.35 * asp * kf);
+  }
+
+  const n = IF.feedSparkleCount;
+  const radial = radMax * exp;
+  const spBase =
+    r *
+    IF.feedSparkleBaseSize *
+    (0.55 + 0.45 * exp) *
+    (1 + exp * IF.feedSparkleExpandScale) *
+    IF.feedIntensity;
+
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * Math.PI * 2 + orbit + i * 0.35;
+    const px = Math.cos(ang) * radial * (0.85 + 0.15 * Math.sin(i * 2.1));
+    const py = emitY + Math.sin(ang) * radial * asp * (0.85 + 0.15 * Math.cos(i * 1.8));
+    const arm = spBase * (0.75 + 0.25 * Math.sin(i + u * 10));
+    const a = alpha * (0.82 + 0.18 * Math.sin(i * 1.1 + u * 7));
+    const gold = [255, 230, 150 + (i % 3) * 15];
+    const mint = [95 + (i % 4) * 18, 210 + (i % 2) * 15, 130 + (i % 3) * 12];
+    const rgb = i % 2 === 0 ? gold : mint;
+    drawSparkle(p, px, py, arm, orbit + i * 0.9 + sheep._tick * 0.1, rgb, a);
+  }
+
+  const crumbs = 5;
+  for (let c = 0; c < crumbs; c++) {
+    const ang = (c / crumbs) * Math.PI * 2 + orbit * 1.3;
+    const cr = radial * (0.35 + 0.4 * exp);
+    const cx = Math.cos(ang) * cr;
+    const cy = emitY + Math.sin(ang) * cr * asp + r * 0.12 * (1 - exp);
+    const ca = alpha * 0.4 * env * (0.7 + 0.3 * Math.sin(c + u * 5));
+    p.fill(130 + c * 8, 210 - c * 5, 120 + c * 6, ca);
+    p.ellipse(cx, cy, r * (0.11 + 0.04 * exp), r * (0.07 + 0.03 * exp));
+  }
+}
+
+/** Soft heart shape; set fill/stroke on `p` before calling, or pass rgba + outline. */
+function drawHeart(p, x, y, size, fillRgba, outlineRgba) {
+  if (fillRgba) {
+    p.fill(fillRgba[0], fillRgba[1], fillRgba[2], fillRgba[3]);
+  }
+  if (outlineRgba) {
+    p.stroke(outlineRgba[0], outlineRgba[1], outlineRgba[2], outlineRgba[3]);
+    p.strokeWeight(Math.max(1.1, size * 0.13));
+  } else {
+    p.noStroke();
+  }
   p.beginShape();
   p.vertex(x, y + size * 0.3);
   p.bezierVertex(x, y - size * 0.2, x - size * 0.6, y - size * 0.4, x, y - size * 0.8);
   p.bezierVertex(x + size * 0.6, y - size * 0.4, x, y - size * 0.2, x, y + size * 0.3);
   p.endShape(p.CLOSE);
+}
+
+/** Four-point twinkle; warm, readable on terrain. */
+function drawSparkle(p, x, y, arm, rot, rgb, alpha) {
+  if (!rgb || rgb.length < 3 || !Number.isFinite(arm) || arm <= 0) return;
+  p.push();
+  p.translate(x, y);
+  p.rotate(rot);
+  p.stroke(rgb[0], rgb[1], rgb[2], alpha * 0.85);
+  p.strokeWeight(arm * 0.42);
+  p.strokeCap(p.ROUND);
+  p.line(-arm, 0, arm, 0);
+  p.line(0, -arm, 0, arm);
+  p.noStroke();
+  p.fill(rgb[0], rgb[1], rgb[2], alpha);
+  p.circle(0, 0, arm * 0.55);
+  p.pop();
+}
+
+function drawVoiceCue(p, r) {
+  p.push();
+  p.translate(r * 0.48, r * 0.26);
+  p.noStroke();
+  p.fill(255, 245, 210, 245);
+  p.ellipse(-r * 0.05, 0, r * 0.11, r * 0.09);
+  p.ellipse(r * 0.02, -r * 0.02, r * 0.13, r * 0.1);
+  p.ellipse(r * 0.1, r * 0.02, r * 0.09, r * 0.08);
+  p.fill(255, 228, 160, 230);
+  p.textAlign(p.CENTER, p.CENTER);
+  p.textSize(r * 0.28);
+  p.text('♪', r * 0.22, -r * 0.12);
+  p.pop();
+}
+
+/** p5 failed loads leave a 1×1 placeholder; treat that as “not loaded”. */
+function isCalmingCueImageReady(img) {
+  return (
+    img &&
+    typeof img.width === 'number' &&
+    img.width > 2 &&
+    typeof img.height === 'number' &&
+    img.height > 2
+  );
+}
+
+let calmingCueMissingWarned = false;
+
+/** Feeding / petting: PNG only (no badge/plate); alpha from art + tint pulse; float/breathe from parent. */
+function drawCalmingFeedPetArt(p, r, kind, pulse) {
+  const img = kind === 'grass' ? calmingFeedingImg : calmingPettingImg;
+  const isGrass = kind === 'grass';
+
+  if (!isCalmingCueImageReady(img)) {
+    if (!calmingCueMissingWarned && typeof console !== 'undefined') {
+      calmingCueMissingWarned = true;
+      console.warn(
+        '[calming] Feeding/petting PNG not ready (failed load or 1×1 placeholder). Check network tab for',
+        isGrass ? 'feeding' : 'petting',
+        'asset.',
+      );
+    }
+    return;
+  }
+
+  const targetH = r * 1.72;
+  const sc = targetH / img.height;
+  const w = img.width * sc;
+  const h = img.height * sc;
+  const alpha = Math.round(255 * (0.88 + 0.1 * pulse));
+  p.imageMode(p.CENTER);
+  p.tint(255, 255, 255, alpha);
+  p.image(img, 0, -r * 0.05, w, h);
+  p.noTint();
+}
+
+/**
+ * Rich “calming” read: glow + hearts + sparkles + kind cue. Stays above the sprite with soft motion.
+ */
+function drawCalmingIndicator(p, sheep, r, kind) {
+  const phase = sheep._tick * 0.11 + sheep.wanderPhase;
+  const id = sheep.id * 1.17;
+  const baseY = -r * 2.42;
+  const floatY =
+    Math.sin(phase * 1.35) * (r * 0.09) + Math.sin(phase * 0.71 + id) * (r * 0.05);
+  const floatX = Math.sin(phase * 0.88 + id) * (r * 0.07);
+  const breathe = 1 + Math.sin(phase * 1.65) * 0.055;
+  const pulse = 0.88 + 0.12 * Math.sin(phase * 2.1);
+
+  const isVoice = kind === 'voice';
+
+  p.push();
+  p.translate(floatX, baseY + floatY);
+  p.scale(breathe);
+
+  if (kind === 'pet' || kind === 'grass') {
+    drawCalmingFeedPetArt(p, r, kind, pulse);
+    p.pop();
+    return;
+  }
+
+  const glowCore = isVoice
+    ? [228, 214, 252]
+    : [255, 218, 228];
+  const glowOuter = isVoice
+    ? [210, 195, 245]
+    : [255, 195, 210];
+
+  // Contrast anchor (reads on grass / wood terrain)
+  p.noStroke();
+  p.fill(28, 22, 38, 72 * pulse);
+  p.ellipse(0, r * 0.18, r * 1.45, r * 0.52);
+
+  // Layered soft glow
+  for (let layer = 0; layer < 4; layer++) {
+    const k = 1 - layer / 5;
+    const a = (0.1 + k * 0.1) * pulse * 255;
+    p.fill(
+      glowOuter[0] + (glowCore[0] - glowOuter[0]) * (layer / 3.5),
+      glowOuter[1] + (glowCore[1] - glowOuter[1]) * (layer / 3.5),
+      glowOuter[2] + (glowCore[2] - glowOuter[2]) * (layer / 3.5),
+      a * 0.45,
+    );
+    const d = r * (1.15 + layer * 0.38);
+    p.ellipse(0, -r * 0.06, d, d * 0.92);
+  }
+
+  const sparkleGold = [255, 214, 120];
+  const sparkleRose = [255, 175, 195];
+  const sparkleMint = [140, 215, 165];
+  const sparkleLav = [220, 200, 255];
+  const sparkleCream = [255, 235, 205];
+
+  const sets = isVoice
+    ? [sparkleLav, sparkleGold, sparkleRose]
+    : [sparkleGold, sparkleRose, sparkleCream];
+
+  for (let i = 0; i < 7; i++) {
+    const ang = (i / 7) * Math.PI * 2 + phase * 0.38 + id * 0.2;
+    const rad = r * (0.62 + 0.14 * Math.sin(phase * 1.4 + i * 0.9));
+    const sx = Math.cos(ang) * rad;
+    const sy = Math.sin(ang) * rad * 0.52 - r * 0.1;
+    const arm = r * (0.07 + 0.025 * Math.sin(phase * 2.4 + i));
+    const tw = 0.65 + 0.35 * Math.sin(phase * 2.1 + i * 1.4);
+    const c = sets[i % sets.length];
+    drawSparkle(p, sx, sy, arm * tw, phase * 0.65 + i * 0.4, c, 228 * pulse);
+  }
+
+  const outline = [120, 72, 82, 130];
+  drawHeart(p, -r * 0.38, -r * 0.12, r * 0.32, [255, 148, 178, 245 * pulse], outline);
+  drawHeart(p, r * 0.32, r * 0.04, r * 0.22, [255, 120, 165, 215 * pulse], outline);
+  drawHeart(p, 0, -r * 0.38, r * 0.2, [255, 195, 210, 185 * pulse], outline);
+
+  if (kind === 'voice') {
+    drawVoiceCue(p, r);
+  }
+
+  p.pop();
 }
