@@ -11,13 +11,24 @@ const SFX_DEFS = [
   { id: 'smallWin',   label: 'Sheep captured',     src: '/sfx-small-win.mp3',    defaultVol: 0.30 },
   { id: 'kidsLaugh',  label: 'Kids laughing',      src: '/sfx-kids-laughing.mp3', defaultVol: 0.25 },
   { id: 'trumpet',    label: 'Trumpet',            src: '/sfx-trumpet.mp3',      defaultVol: 0.40 },
+  { id: 'grassHint',  label: 'Grass hint',         src: '/sfx-grass-hint.mp3',   defaultVol: 0.30 },
+  { id: 'encourageHint', label: 'Encourage hint',  src: '/sfx-encourage-hint.mp3', defaultVol: 0.30 },
 ];
 
 /** SFX that play together share a combined TEST button. */
 const SFX_GROUPS = [
-  { ids: ['madSheep'],              testLabel: 'TEST' },
-  { ids: ['smallWin'],              testLabel: 'TEST' },
   { ids: ['trumpet', 'kidsLaugh'],  testLabel: 'TEST Win' },
+];
+
+/** SFX pools — each play picks a random clip from the set. */
+const SFX_POOL_DEFS = [
+  {
+    id: 'kidVoice', label: 'Kind words', defaultVol: 0.50,
+    srcs: [
+      '/sfx-kid-voice-1.mp3', '/sfx-kid-voice-2.mp3', '/sfx-kid-voice-3.mp3',
+      '/sfx-kid-voice-4.mp3', '/sfx-kid-voice-5.mp3', '/sfx-kid-voice-6.mp3',
+    ],
+  },
 ];
 
 /** Eat-grass is a singleton loop — only one instance plays at a time. */
@@ -29,6 +40,8 @@ const STORAGE_KEY = 'angry-sheep-sound';
 const players = new Map();
 /** @type {Map<string, { src: string, volume: number, muted: boolean }>} */
 const sfxPlayers = new Map();
+/** Track next index for pool SFX sequential playback. */
+const poolIndex = new Map();
 /** Single looping eat-grass audio. */
 let eatGrassAudio = null;
 let eatGrassVolume = 0.5;
@@ -104,6 +117,18 @@ function initPlayers() {
     preload.load();
   }
 
+  for (const def of SFX_POOL_DEFS) {
+    const volume = saved['sfx_' + def.id] ?? def.defaultVol;
+    const trackMuted = saved['sfx_' + def.id + '_m'] ?? false;
+    sfxPlayers.set(def.id, { srcs: def.srcs, volume, muted: trackMuted });
+    for (const s of def.srcs) {
+      const preload = new Audio(s);
+      preload.preload = 'auto';
+      preload.volume = 0;
+      preload.load();
+    }
+  }
+
   // Eat-grass singleton loop
   eatGrassVolume = saved['sfx_' + EAT_GRASS.id] ?? EAT_GRASS.defaultVol;
   eatGrassMuted = saved['sfx_' + EAT_GRASS.id + '_m'] ?? false;
@@ -111,6 +136,18 @@ function initPlayers() {
   eatGrassAudio.loop = true;
   eatGrassAudio.preload = 'auto';
   eatGrassAudio.volume = 0;
+
+  // Register gesture listeners early so we never miss the first user click.
+  const onGesture = () => {
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    for (const [, p] of players) p.audio.play().catch(() => {});
+    document.removeEventListener('click', onGesture);
+    document.removeEventListener('touchstart', onGesture);
+    document.removeEventListener('keydown', onGesture);
+  };
+  document.addEventListener('click', onGesture);
+  document.addEventListener('touchstart', onGesture);
+  document.addEventListener('keydown', onGesture);
 }
 
 /** Current fade multiplier applied on top of user volume (0 = silent, 1 = full). */
@@ -128,31 +165,10 @@ function applyVolumes() {
   }
 }
 
-/** Attempt to start all background tracks; on failure, retry on first user gesture. */
-function tryPlayAll() {
+/** Start all background tracks (safe to call repeatedly). */
+function startAll() {
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-
-  const startAll = () => {
-    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-    for (const [, p] of players) p.audio.play().catch(() => {});
-  };
-
-  // Try immediately — if browser blocks it, set up gesture listeners to retry
-  let blocked = false;
-  for (const [, p] of players) {
-    p.audio.play().then(() => {}, () => { blocked = true; });
-  }
-
-  const resume = () => {
-    startAll();
-    document.removeEventListener('click', resume);
-    document.removeEventListener('touchstart', resume);
-    document.removeEventListener('keydown', resume);
-  };
-  // Always register — cheap no-op if audio already playing
-  document.addEventListener('click', resume);
-  document.addEventListener('touchstart', resume);
-  document.addEventListener('keydown', resume);
+  for (const [, p] of players) p.audio.play().catch(() => {});
 }
 
 /**
@@ -164,7 +180,7 @@ export function fadeAudio(t) {
 
   if (fadeMul > 0 && !playing) {
     playing = true;
-    tryPlayAll();
+    startAll();
   }
 
   applyVolumes();
@@ -216,7 +232,15 @@ export function setEatGrassActive(active) {
 export function playSfx(id) {
   const entry = sfxPlayers.get(id);
   if (!entry || muted || entry.muted) return;
-  const audio = new Audio(entry.src);
+  let src;
+  if (entry.srcs) {
+    const i = poolIndex.get(id) || 0;
+    src = entry.srcs[i];
+    poolIndex.set(id, (i + 1) % entry.srcs.length);
+  } else {
+    src = entry.src;
+  }
+  const audio = new Audio(src);
   audio.volume = entry.volume;
   audio.play().catch(() => {});
 }
@@ -258,7 +282,26 @@ function resetToDefaults() {
   uiRows[idx].setMuted(false);
   idx++;
 
-  for (const def of SFX_DEFS) {
+  // Reset grouped SFX first, then ungrouped — matches UI row order
+  const _groupedIds = new Set(SFX_GROUPS.flatMap((g) => g.ids));
+  for (const def of SFX_DEFS.filter((d) => _groupedIds.has(d.id))) {
+    const s = sfxPlayers.get(def.id);
+    s.volume = def.defaultVol;
+    s.muted = false;
+    uiRows[idx].setVolume(def.defaultVol);
+    uiRows[idx].setMuted(false);
+    idx++;
+  }
+  for (const def of SFX_DEFS.filter((d) => !_groupedIds.has(d.id))) {
+    const s = sfxPlayers.get(def.id);
+    s.volume = def.defaultVol;
+    s.muted = false;
+    uiRows[idx].setVolume(def.defaultVol);
+    uiRows[idx].setMuted(false);
+    idx++;
+  }
+
+  for (const def of SFX_POOL_DEFS) {
     const s = sfxPlayers.get(def.id);
     s.volume = def.defaultVol;
     s.muted = false;
@@ -465,6 +508,60 @@ export function initSoundPanel() {
       }
     });
     panel.appendChild(testBtn);
+  }
+
+  // Ungrouped SFX — individual rows with inline TEST buttons
+  const groupedIds = new Set(SFX_GROUPS.flatMap((g) => g.ids));
+  for (const def of SFX_DEFS) {
+    if (groupedIds.has(def.id)) continue;
+    const s = sfxPlayers.get(def.id);
+    const { el, setVolume, setMuted } = buildTrackRow({
+      label: def.label,
+      volume: s.volume,
+      isMuted: s.muted,
+      onVolume(val) {
+        s.volume = val;
+        saveSettings();
+      },
+      onMute(m) {
+        s.muted = m;
+        saveSettings();
+      },
+      onTest(vol) {
+        const a = new Audio(def.src);
+        a.volume = vol;
+        a.play().catch(() => {});
+      },
+    });
+    uiRows.push({ setVolume, setMuted });
+    panel.appendChild(el);
+  }
+
+  // Pool SFX — single control, TEST plays a random clip
+  for (const def of SFX_POOL_DEFS) {
+    const s = sfxPlayers.get(def.id);
+    const { el, setVolume, setMuted } = buildTrackRow({
+      label: def.label,
+      volume: s.volume,
+      isMuted: s.muted,
+      onVolume(val) {
+        s.volume = val;
+        saveSettings();
+      },
+      onMute(m) {
+        s.muted = m;
+        saveSettings();
+      },
+      onTest(vol) {
+        const i = poolIndex.get(def.id) || 0;
+        const a = new Audio(def.srcs[i]);
+        poolIndex.set(def.id, (i + 1) % def.srcs.length);
+        a.volume = vol;
+        a.play().catch(() => {});
+      },
+    });
+    uiRows.push({ setVolume, setMuted });
+    panel.appendChild(el);
   }
 
   // Click inside panel should not close it
