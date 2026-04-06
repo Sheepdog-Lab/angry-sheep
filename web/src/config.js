@@ -16,7 +16,7 @@ export const TERRAIN_GRASS_CLUMP_URL = `/terrain-grass-clump.png?v=${TERRAIN_GRA
  * Bump `PEN_ASSET_REV` when you replace `web/public/pen.png` so browsers
  * fetch the new file (Vite does not hash `public/` URLs).
  */
-export const PEN_ASSET_REV = 2;
+export const PEN_ASSET_REV = 3;
 export const PEN_TEXTURE_URL = `/pen.png?v=${PEN_ASSET_REV}`;
 /** Bump when replacing any `web/public/victory-*.png` sprite. */
 export const VICTORY_SPRITES_REV = 4;
