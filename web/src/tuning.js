@@ -124,7 +124,7 @@ export function initTuning() {
   // Panel
   panel = document.createElement('div');
   Object.assign(panel.style, {
-    position: 'fixed', top: '42px', right: '10px', zIndex: '999',
+    position: 'fixed', top: '42px', right: '10px', zIndex: '1001',
     background: 'rgba(30,30,30,0.92)', color: '#ddd',
     padding: '12px 14px', borderRadius: '6px',
     fontFamily: 'monospace', fontSize: '12px',

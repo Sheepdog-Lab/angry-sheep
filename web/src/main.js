@@ -46,7 +46,8 @@ import {
   drawTerrainAmbientGrass,
   updateGrassSheepInteraction,
 } from './terrainGrass.js';
-import { initSoundPanel, fadeAudio, setEatGrassActive } from './sound.js';
+import { initSound, fadeAudio, setEatGrassActive } from './sound.js';
+import { initHintButtons } from './hintButtons.js';
 import './browserFramePump.js';
 
 initGameMode();
@@ -91,7 +92,7 @@ function initResetButton() {
   Object.assign(resetBtn.style, {
     position: 'fixed',
     top: '10px',
-    right: '160px',
+    right: '80px',
     zIndex: '1000',
     padding: '6px 14px',
     background: '#8b1a1a',
@@ -181,7 +182,8 @@ new p5((p) => {
     initTerrainAmbientGrass(canvasSize);
     Input.init(p, canvasSize);
     initTuning();
-    initSoundPanel();
+    initSound();
+    initHintButtons();
     initResetButton();
     connectMarkerStream();
 

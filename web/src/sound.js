@@ -78,7 +78,11 @@ function saveSettings() {
 /** Shared AudioContext for tracks that need gain > 1. */
 let audioCtx = null;
 
+let playersInited = false;
+
 function initPlayers() {
+  if (playersInited) return;
+  playersInited = true;
   const saved = loadSettings();
   muted = saved.muted ?? false;
 
@@ -243,6 +247,32 @@ export function playSfx(id) {
   const audio = new Audio(src);
   audio.volume = entry.volume;
   audio.play().catch(() => {});
+}
+
+/**
+ * Initialize the audio engine without showing any UI panel.
+ * Safe to call multiple times — the underlying initPlayers() is idempotent.
+ */
+export function initSound() {
+  initPlayers();
+}
+
+/**
+ * Recover from stalled audio: resume the AudioContext if suspended and
+ * rewind/replay all background tracks (and the eat-grass loop if active).
+ * Volumes are not changed — applyVolumes() re-asserts the current mix at the end.
+ */
+export function restartAudio() {
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  for (const [, p] of players) {
+    try { p.audio.pause(); p.audio.currentTime = 0; } catch {}
+    p.audio.play().catch(() => {});
+  }
+  if (eatGrassPlaying && eatGrassAudio) {
+    try { eatGrassAudio.pause(); eatGrassAudio.currentTime = 0; } catch {}
+    eatGrassAudio.play().catch(() => {});
+  }
+  applyVolumes();
 }
 
 // -- UI --
