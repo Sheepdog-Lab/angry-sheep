@@ -34,13 +34,18 @@ const CATEGORIES = [
     color: '#c4a35a',
     params: [
       { key: '_blockCount',    label: 'Block count',    min: 0,      max: 10,    step: 1,      tool: 'block' },
+      { key: '_blockSize',     label: 'Block size',     min: 0.03,   max: 0.15,  step: 0.005,  target: 'toolSize', toolType: 'block' },
     ],
   },
 ];
 
 function getVal(param) {
   if (param.tool) return INITIAL_TOOLS.filter((t) => t.type === param.tool).length;
-  if (param.target === 'toolSize') return TOOL_SIZES[param.toolType];
+  if (param.target === 'toolSize') {
+    const entry = TOOL_SIZES[param.toolType];
+    // Block stores { w, h }; expose width to the slider and scale h proportionally on write.
+    return typeof entry === 'object' ? entry.w : entry;
+  }
   return SHEEP[param.key];
 }
 
@@ -48,7 +53,14 @@ function setVal(param, val) {
   if (param.tool) {
     setToolCount(param.tool, val);
   } else if (param.target === 'toolSize') {
-    TOOL_SIZES[param.toolType] = val;
+    const entry = TOOL_SIZES[param.toolType];
+    if (typeof entry === 'object') {
+      // Preserve aspect ratio when scaling { w, h } tools (e.g. block).
+      const ratio = entry.h / entry.w;
+      TOOL_SIZES[param.toolType] = { w: val, h: val * ratio };
+    } else {
+      TOOL_SIZES[param.toolType] = val;
+    }
   } else {
     SHEEP[param.key] = val;
     if (param.respawn) spawnFlock(val);
