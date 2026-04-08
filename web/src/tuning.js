@@ -1,7 +1,7 @@
 import { SHEEP, INITIAL_TOOLS, TOOL_SIZES } from './config.js';
 import { spawnFlock } from './sheep.js';
 import { setToolCount } from './input.js';
-import { getTopButtonRow } from './topButtonRow.js';
+import { getTopButtonRow, getHudHost } from './topButtonRow.js';
 
 let panel = null;
 let visible = false;
@@ -212,7 +212,7 @@ export function initTuning() {
     }
   });
 
-  document.body.appendChild(panel);
+  getHudHost().appendChild(panel);
 }
 
 function buildSlider(param) {

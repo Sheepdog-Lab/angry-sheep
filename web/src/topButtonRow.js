@@ -10,6 +10,15 @@
 //   first append → leftmost
 //   last  append → rightmost
 // Callers should respect this when initializing.
+//
+// HUD elements mount into #fullscreenApp (the same element the
+// fullscreen API is called on) so they stay visible in fullscreen mode.
+// Outside fullscreen, #fullscreenApp covers the viewport, so position:
+// fixed children land in the same visual spot either way.
+
+export function getHudHost() {
+  return document.getElementById('fullscreenApp') || document.body;
+}
 
 let row = null;
 
@@ -24,6 +33,6 @@ export function getTopButtonRow() {
     display: 'flex',
     gap: '6px',
   });
-  document.body.appendChild(row);
+  getHudHost().appendChild(row);
   return row;
 }

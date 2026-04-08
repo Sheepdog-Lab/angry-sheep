@@ -9,7 +9,7 @@
 
 import { playSfx, restartAudio } from './sound.js';
 import { setHerdMode } from './herdMode.js';
-import { getTopButtonRow } from './topButtonRow.js';
+import { getTopButtonRow, getHudHost } from './topButtonRow.js';
 
 const BTN = {
   padding: '6px 14px',
@@ -67,7 +67,7 @@ export function initHintButtons() {
   makeHint('Grass hint (G)',    () => playSfx('grassHint'));
   makeHint('Speaking hint (S)', () => playSfx('encourageHint'));
   makeHint('Kind words (K)',    () => playSfx('kidVoice'));
-  document.body.appendChild(hintRow);
+  getHudHost().appendChild(hintRow);
 
   // -- Row 3: Hold to Herd --
   // Pressed and held while a kid is speaking kind words. While held,
@@ -111,7 +111,7 @@ export function initHintButtons() {
   herdBtn.addEventListener('touchend', onRelease);
   herdBtn.addEventListener('touchcancel', onRelease);
   herdRow.appendChild(herdBtn);
-  document.body.appendChild(herdRow);
+  getHudHost().appendChild(herdRow);
 
   // -- Hotkeys: G / S / K one-shot, H hold-to-herd --
   // Skip when typing in form fields, and ignore when modifier keys are
