@@ -1,6 +1,7 @@
 import { SHEEP, INITIAL_TOOLS, TOOL_SIZES } from './config.js';
 import { spawnFlock } from './sheep.js';
 import { setToolCount } from './input.js';
+import { getTopButtonRow } from './topButtonRow.js';
 
 let panel = null;
 let visible = false;
@@ -17,6 +18,7 @@ const CATEGORIES = [
       { key: 'speed',          label: 'Speed',          min: 0.0002, max: 0.005, step: 0.0001 },
       { key: 'radius',         label: 'Size',           min: 0.008,  max: 0.04,  step: 0.001  },
       { key: 'stressPerPush',  label: 'Anger per push', min: 0.05,   max: 1.0,   step: 0.05   },
+      { key: 'herdCalmRate',   label: 'Herd calm-rate', min: 0.05,   max: 1.0,   step: 0.05   },
       { key: 'crisisSpeedMult', label: 'Crisis speed',  min: 1.0,    max: 3.0,   step: 0.1    },
     ],
   },
@@ -102,7 +104,6 @@ export function initTuning() {
   const toggle = document.createElement('button');
   toggle.textContent = 'Tune';
   Object.assign(toggle.style, {
-    position: 'fixed', top: '10px', right: '10px', zIndex: '1000',
     padding: '6px 14px', background: '#333', color: '#fff',
     border: '1px solid #666', borderRadius: '4px', cursor: 'pointer',
     fontFamily: 'monospace', fontSize: '13px',
@@ -119,7 +120,7 @@ export function initTuning() {
       panel.style.display = 'none';
     }
   });
-  document.body.appendChild(toggle);
+  getTopButtonRow().appendChild(toggle);
 
   // Panel
   panel = document.createElement('div');

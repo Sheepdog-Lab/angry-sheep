@@ -2,6 +2,7 @@ import { PHYSICAL_MODE, SHEEP, TABLE_RADIUS, PEN } from './config.js';
 import { isInsidePen, isInGap, penEdgeInfo } from './pen.js';
 import { getDragId } from './input.js';
 import { playSfx } from './sound.js';
+import { isHerdActive } from './herdMode.js';
 
 // -- Flock state --
 let flock = [];
@@ -558,6 +559,7 @@ function applyToolReactions(sheep, tools) {
   let nearbyBlocks = 0;
   let nearGrass = false;
   let eatingGrass = false;
+  let herdCalming = false;
   const inCrisis = sheep.stress >= SHEEP.crisisThreshold;
 
   for (const tool of tools) {
@@ -571,7 +573,13 @@ function applyToolReactions(sheep, tools) {
       : isPointInForwardCone(tool, dogToSheepX, dogToSheepY);
 
     if (tool.type === 'sheepdog' && dist < SHEEP.dogFleeRadius && dist > 0.001 && inFrontOfDog) {
-      if (inCrisis) {
+      if (isHerdActive()) {
+        // Herd mode (wizard-of-oz): same physical contact, kind words flip
+        // the meaning. Calm the sheep regardless of crisis state, and don't
+        // accumulate the split counter while we're herding.
+        sheep.stress = Math.max(0, sheep.stress - SHEEP.herdCalmRate * 0.02);
+        herdCalming = true;
+      } else if (inCrisis) {
         // Crisis sheep ignore sheepdogs for movement — but it adds to split counter
         sheep.dogPushCount++;
         if (sheep.dogPushCount >= SHEEP.splitStressPush * 60) {
@@ -642,6 +650,7 @@ function applyToolReactions(sheep, tools) {
   }
 
   sheep._isEating = eatingGrass;
+  sheep._herdCalming = herdCalming;
 
   // Digest when not near any grass
   if (!nearGrass) {
@@ -689,7 +698,10 @@ function applyDeescalation(sheep, tools, voice, pet) {
     sheep.stress = Math.max(0, sheep.stress - SHEEP.voiceCalmRate);
   }
 
-  // One clear feedback variant: most direct interaction wins
+  // One clear feedback variant: most direct interaction wins.
+  // Herd contact intentionally does NOT set a _calmingKind — the herd
+  // visual is the looping pet-bloom glow driven from updateInteractionFeedback,
+  // not the floating PNG cue.
   if (sheep.beingPetted) {
     sheep._calmingKind = 'pet';
   } else if (grassCalming) {
@@ -729,6 +741,19 @@ function updateInteractionFeedback(sheep) {
   if (feedEdge && sheep._tick - sheep._lastFeedFeedbackTick >= IF.feedCooldownFrames) {
     sheep._feedReactT = IF.feedFrames;
     sheep._lastFeedFeedbackTick = sheep._tick;
+  }
+
+  // Wizard-of-oz herd: reuse the pet bloom (the glowing rings + hearts that
+  // fire when petting starts). Re-trigger it whenever it expires while
+  // sheepdog contact in herd mode is still happening, so the glow loops
+  // continuously instead of playing once.
+  if (
+    sheep._herdCalming &&
+    sheep._petReactT === 0 &&
+    sheep._tick - sheep._lastPetFeedbackTick >= IF.petCooldownFrames
+  ) {
+    sheep._petReactT = IF.petFrames;
+    sheep._lastPetFeedbackTick = sheep._tick;
   }
 
   sheep._prevBeingPetted = sheep.beingPetted;

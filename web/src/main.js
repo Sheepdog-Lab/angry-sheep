@@ -48,6 +48,7 @@ import {
 } from './terrainGrass.js';
 import { initSound, fadeAudio, setEatGrassActive } from './sound.js';
 import { initHintButtons } from './hintButtons.js';
+import { getTopButtonRow } from './topButtonRow.js';
 import './browserFramePump.js';
 
 initGameMode();
@@ -90,10 +91,6 @@ function initResetButton() {
   resetBtn = document.createElement('button');
   resetBtn.textContent = 'Reset the Game';
   Object.assign(resetBtn.style, {
-    position: 'fixed',
-    top: '10px',
-    right: '80px',
-    zIndex: '1000',
     padding: '6px 14px',
     background: '#8b1a1a',
     color: '#fff',
@@ -102,10 +99,9 @@ function initResetButton() {
     cursor: 'pointer',
     fontSize: '13px',
     fontFamily: 'monospace',
-    display: 'none',
   });
   resetBtn.addEventListener('click', () => Session.resetSession());
-  document.body.appendChild(resetBtn);
+  getTopButtonRow().appendChild(resetBtn);
 }
 
 new p5((p) => {
@@ -181,10 +177,12 @@ new p5((p) => {
     setTerrainGrassImage(terrainGrassClumpImg);
     initTerrainAmbientGrass(canvasSize);
     Input.init(p, canvasSize);
-    initTuning();
     initSound();
-    initHintButtons();
-    initResetButton();
+    // Order matters: each of these appends one button to the shared
+    // top-right row in left-to-right visual order.
+    initResetButton();   // 1st  → leftmost  (Reset the Game)
+    initHintButtons();   // 2nd  → middle    (Reset the Sound), plus rows 2 + 3
+    initTuning();        // 3rd  → rightmost (Tune)
     connectMarkerStream();
 
     notifyViewportChange = () => {
@@ -317,11 +315,10 @@ new p5((p) => {
     // Session overlay (intro, hints, win, reset fade)
     Session.drawOverlay(p, canvasSize);
 
-    // HUD + reset button only during playing
+    // HUD only during playing; Reset the Game button stays visible always.
     if (phase === 'playing') {
       Input.drawHUD(p, canvasSize);
     }
-    if (resetBtn) resetBtn.style.display = phase === 'playing' ? '' : 'none';
 
     p.push();
     p.fill(255, 255, 255, 170);

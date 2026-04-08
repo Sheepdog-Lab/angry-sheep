@@ -237,6 +237,7 @@ export const SHEEP = {
   blockDragStressRate: 0.015, // stress per frame when a dragged block is near
   // Stress & crisis
   stressPerPush: 0.15,      // stress added per sheepdog encounter
+  herdCalmRate: 0.15,       // stress removed per sheepdog encounter while Herd mode is held
   crisisThreshold: 1.0,     // stress level that triggers crisis mode
   crisisSpeedMult: 2.7,     // speed multiplier during crisis
   crisisWanderJitter: 0.8,  // erratic movement jitter during crisis
