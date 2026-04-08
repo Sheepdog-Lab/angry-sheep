@@ -136,7 +136,7 @@ export const TOOL_COLORS = {
 };
 
 export const TOOL_SIZES = {
-  block: { w: 0.07, h: 0.025 },
+  block: { w: 0.12, h: 0.025 },
   sheepdog: 0.03,
   grass: 0.02,
 };
