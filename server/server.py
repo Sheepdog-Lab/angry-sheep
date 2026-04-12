@@ -205,42 +205,66 @@ cap = None
 
 camera_commands = asyncio.Queue()
 
-# Latest frame from browser (BGR); OpenCV index order often ≠ getUserMedia order.
+# Latest frame from browser: handler only stores the newest base64 string (cheap).
+# JPEG decode runs in the capture loop so the WebSocket task never backs up on imdecode.
 _browser_bgr = None
 _browser_mono = 0.0
+_browser_frame = None  # (b64_str, seq, mono) or None
+_browser_seq = 0
+_last_decoded_browser_seq = -1
 BROWSER_FRAME_TTL_SEC = 0.55
 # After each broadcast, yield so the WebSocket task can ingest new JPEGs.
 # 0 = one event-loop tick only (max throughput; raise if WS ingest starves on slow machines).
 STREAM_LOOP_YIELD_SEC = 0.0
-# When the latest browser JPEG was already streamed, skip ArUco (saves CPU).
-_last_streamed_browser_mono = None
+# When ArUco was already run for this decoded browser frame, skip (saves CPU).
+_last_streamed_browser_seq = None
 
 load_calibration()
 
 
 def ingest_browser_jpeg_b64(b64s):
-    """Decode base64 JPEG into BGR image; update shared buffer."""
-    global _browser_bgr, _browser_mono
+    """Record latest browser JPEG (base64 only); decode happens in take_frame_for_detection."""
+    global _browser_frame, _browser_seq, _browser_mono
+    if not isinstance(b64s, str) or not b64s:
+        return
+    _browser_seq += 1
+    mono = time.monotonic()
+    _browser_frame = (b64s, _browser_seq, mono)
+    _browser_mono = mono
+
+
+def _decode_browser_jpeg_if_new():
+    """Decode _browser_frame into _browser_bgr when sequence advances."""
+    global _browser_bgr, _browser_frame, _last_decoded_browser_seq
+    if _browser_frame is None:
+        return False
+    _b64, seq, _mono = _browser_frame
+    if seq == _last_decoded_browser_seq:
+        return _browser_bgr is not None
     try:
-        raw = base64.b64decode(b64s)
+        raw = base64.b64decode(_b64)
         arr = np.frombuffer(raw, dtype=np.uint8)
         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
         if img is not None and img.size > 0:
             _browser_bgr = img
-            _browser_mono = time.monotonic()
+            _last_decoded_browser_seq = seq
+            return True
     except Exception:
         pass
+    return False
 
 
 def take_frame_for_detection():
     """Return (frame_bgr, source_str) or (None, None)."""
     global _browser_bgr, _browser_mono, cap
     now = time.monotonic()
-    if _browser_bgr is not None and (now - _browser_mono) < BROWSER_FRAME_TTL_SEC:
+    if _browser_frame is not None and (now - _browser_mono) < BROWSER_FRAME_TTL_SEC:
         if cap is not None:
             cap.release()
             cap = None
-        return _browser_bgr, "browser"
+        _decode_browser_jpeg_if_new()
+        if _browser_bgr is not None:
+            return _browser_bgr, "browser"
     if cap is None:
         cap = open_camera(CAMERA_INDEX)
         if cap is not None:
@@ -411,7 +435,7 @@ async def broadcast_markers_json(message: str):
 
 
 async def capture_and_stream_loop():
-    global cap, CAMERA_INDEX, _last_streamed_browser_mono
+    global cap, CAMERA_INDEX, _last_streamed_browser_seq
     while True:
         try:
             while True:
@@ -439,13 +463,16 @@ async def capture_and_stream_loop():
             continue
 
         if src == "browser":
-            mono = _browser_mono
-            if mono == _last_streamed_browser_mono:
+            seq = _last_decoded_browser_seq
+            if (
+                _last_streamed_browser_seq is not None
+                and seq == _last_streamed_browser_seq
+            ):
                 await asyncio.sleep(0)
                 continue
-            _last_streamed_browser_mono = mono
+            _last_streamed_browser_seq = seq
         else:
-            _last_streamed_browser_mono = None
+            _last_streamed_browser_seq = None
 
         w, h, markers, debug_frame, processed = detect_markers_bgr(frame)
         message = json.dumps(

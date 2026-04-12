@@ -35,7 +35,9 @@ const CATEGORIES = [
     params: [
       { key: '_sheepdogSize',  label: 'Dog size',       min: 0.015,  max: 0.09,  step: 0.002,  target: 'toolSize', toolType: 'sheepdog' },
       { key: '_blockCount',    label: 'Block count',    min: 0,      max: 10,    step: 1,      tool: 'block' },
-      { key: '_blockSize',     label: 'Block size',     min: 0.03,   max: 0.15,  step: 0.005,  target: 'toolSize', toolType: 'block' },
+      { key: '_blockSize',     label: 'Block size',     min: 0.03,   max: 0.56,  step: 0.005,  target: 'toolSize', toolType: 'block' },
+      { key: 'dogShovelHalfFlat', label: 'Shovel width',       min: 0.02, max: 0.20, step: 0.005 },
+      { key: 'dogShovelArmLen',   label: 'Shovel arm length', min: 0.01, max: 0.15, step: 0.005 },
     ],
   },
 ];

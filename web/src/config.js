@@ -182,6 +182,8 @@ export const SHEEP = {
   // Tool interaction radii (normalized)
   dogFleeRadius: 0.10,      // sheep flee when sheepdog is within this range
   dogFleeForce: 0.004,
+  dogShovelHalfFlat: 0.09,  // half-width of flat shovel face (normalized)
+  dogShovelArmLen: 0.06,    // length of each 45° arm at the ends of the flat
   grassAttractRadius: 0.12, // sheep attracted when grass is within this range
   grassAttractForce: 0.002,
   grazeFillRate: 0.008,     // fullness gained per frame while near grass (calm sheep fill fast)

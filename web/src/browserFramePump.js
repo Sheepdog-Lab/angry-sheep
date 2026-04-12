@@ -1,16 +1,24 @@
 /**
  * Sends JPEG snapshots of #video to server.py so ArUco runs on the *same* camera
  * as the browser preview (OpenCV device indices often don't match getUserMedia).
+ *
+ * Uses requestVideoFrameCallback when available so each pump aligns with a new
+ * camera frame (lower latency than fixed setInterval).
  */
 
 import { sendTrackingCommand, onMarkerWsOpen } from './markerStream.js';
 
 const MAX_WIDTH = 960;
-/** Shorter interval = more tracking updates/sec (snappier physical objects), more CPU. */
-const INTERVAL_MS = 16;
-const JPEG_QUALITY = 0.78;
+/** Fallback cadence when video / RVFC is not ready yet (ms). */
+const POLL_MS = 12;
+const JPEG_QUALITY = 0.72;
 
-let timer = null;
+let running = false;
+/** @type {number | null} */
+let pollTimer = null;
+/** @type {number | null} */
+let rvfcHandle = null;
+
 const canvas = document.createElement('canvas');
 const ctx = canvas.getContext('2d');
 
@@ -31,17 +39,61 @@ function pumpOnce() {
   sendTrackingCommand({ cmd: 'frameJpeg', data: b64 });
 }
 
+function cancelRvfc() {
+  const v = document.getElementById('video');
+  if (v && rvfcHandle != null && typeof v.cancelVideoFrameCallback === 'function') {
+    try {
+      v.cancelVideoFrameCallback(rvfcHandle);
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  rvfcHandle = null;
+}
+
+function scheduleNext() {
+  if (!running) return;
+  const v = document.getElementById('video');
+  if (
+    v
+    && v.readyState >= 2
+    && v.videoWidth
+    && typeof v.requestVideoFrameCallback === 'function'
+  ) {
+    rvfcHandle = v.requestVideoFrameCallback(() => {
+      rvfcHandle = null;
+      if (!running) return;
+      try {
+        pumpOnce();
+      } catch (_) {
+        /* ignore frame pump errors */
+      }
+      scheduleNext();
+    });
+    return;
+  }
+  pollTimer = window.setTimeout(() => {
+    pollTimer = null;
+    if (!running) return;
+    pumpOnce();
+    scheduleNext();
+  }, POLL_MS);
+}
+
 export function startBrowserFramePump() {
   stopBrowserFramePump();
-  timer = window.setInterval(pumpOnce, INTERVAL_MS);
+  running = true;
   pumpOnce();
+  scheduleNext();
 }
 
 export function stopBrowserFramePump() {
-  if (timer != null) {
-    clearInterval(timer);
-    timer = null;
+  running = false;
+  if (pollTimer != null) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
   }
+  cancelRvfc();
 }
 
 function tryStartIfVideoReady() {

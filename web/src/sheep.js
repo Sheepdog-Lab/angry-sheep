@@ -568,33 +568,90 @@ function applyToolReactions(sheep, tools) {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const dogToSheepX = sheep.x - tool.x;
     const dogToSheepY = sheep.y - tool.y;
+
+    // ── Sheepdog interaction ─────────────────────────────────────────────
+    // Physical mode (tool has rotation): crescent/shovel shape.
+    // Digital mode (no rotation): keep existing circle behaviour.
+    let inShovelZone = false;
+    let shovelPushX = 0;
+    let shovelPushY = 0;
+
+    if (tool.type === 'sheepdog' && typeof tool.rotation === 'number') {
+      const fx = Math.cos(tool.rotation);
+      const fy = Math.sin(tool.rotation);
+      const sx = -Math.sin(tool.rotation);
+      const sy = Math.cos(tool.rotation);
+
+      const fwd = dx * fx + dy * fy; // sheep distance ahead of dog
+      const side = dx * sx + dy * sy; // sheep distance to left of dog
+
+      const W = SHEEP.dogShovelHalfFlat;
+      const Ax = SHEEP.dogShovelArmLen * Math.SQRT1_2; // forward depth
+
+      const inZone = fwd >= 0 && fwd <= Ax && Math.abs(side) <= W + fwd;
+
+      if (inZone) {
+        inShovelZone = true;
+        // Determine which sub-zone and its push direction in local coords
+        let fwdComp, sideComp;
+        if (side > W) {
+          // Upper arm → forward + inward (push toward centre axis)
+          fwdComp = Math.SQRT1_2;
+          sideComp = -Math.SQRT1_2;
+        } else if (side < -W) {
+          // Lower arm → forward + inward
+          fwdComp = Math.SQRT1_2;
+          sideComp = Math.SQRT1_2;
+        } else {
+          // Flat face → straight forward
+          fwdComp = 1;
+          sideComp = 0;
+        }
+        // Rotate local push direction into world space
+        shovelPushX = fx * fwdComp + sx * sideComp;
+        shovelPushY = fy * fwdComp + sy * sideComp;
+        // Already unit-length (fwdComp² + sideComp² == 1)
+      }
+    }
+
+    // Digital-mode fallback: original circle check (no rotation available)
     const inFrontOfDog = dist <= 0.001 || tool.type !== 'sheepdog'
       ? true
       : isPointInForwardCone(tool, dogToSheepX, dogToSheepY);
 
-    if (tool.type === 'sheepdog' && dist < SHEEP.dogFleeRadius && dist > 0.001 && inFrontOfDog) {
+    const dogActive = tool.type === 'sheepdog' && (
+      inShovelZone
+      || (typeof tool.rotation !== 'number' && dist < SHEEP.dogFleeRadius && dist > 0.001 && inFrontOfDog)
+    );
+
+    if (dogActive) {
       if (isHerdActive()) {
-        // Herd mode (wizard-of-oz): same physical contact, kind words flip
-        // the meaning. Calm the sheep regardless of crisis state, and don't
-        // accumulate the split counter while we're herding.
         sheep.stress = Math.max(0, sheep.stress - SHEEP.herdCalmRate * 0.02);
         herdCalming = true;
       } else if (inCrisis) {
-        // Crisis sheep ignore sheepdogs for movement — but it adds to split counter
         sheep.dogPushCount++;
         if (sheep.dogPushCount >= SHEEP.splitStressPush * 60) {
-          // Accumulated enough push frames → split
           sheep._splitPending = true;
           sheep.dogPushCount = 0;
         }
       } else {
-        // Normal flee + add stress
-        const force = SHEEP.dogFleeForce * (1 - dist / SHEEP.dogFleeRadius);
-        sheep.vx += (dx / dist) * force;
-        sheep.vy += (dy / dist) * force;
-        sheep.stress = Math.min(sheep.stress + SHEEP.stressPerPush * 0.02, SHEEP.crisisThreshold + 0.5);
+        if (inShovelZone) {
+          // Shovel push — constant force, no distance falloff (contact-based)
+          sheep.vx += shovelPushX * SHEEP.dogFleeForce * 1.5;
+          sheep.vy += shovelPushY * SHEEP.dogFleeForce * 1.5;
+        } else {
+          // Digital-mode radial push
+          const force = SHEEP.dogFleeForce * (1 - dist / SHEEP.dogFleeRadius);
+          sheep.vx += (dx / dist) * force;
+          sheep.vy += (dy / dist) * force;
+        }
+        sheep.stress = Math.min(
+          sheep.stress + SHEEP.stressPerPush * 0.02,
+          SHEEP.crisisThreshold + 0.5,
+        );
       }
     }
+    // ── end sheepdog ────────────────────────────────────────────────────
 
     if (tool.type === 'grass' && dist < SHEEP.grassAttractRadius && dist > 0.001) {
       nearGrass = true;

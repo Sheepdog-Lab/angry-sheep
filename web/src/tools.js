@@ -123,6 +123,9 @@ export function drawTools(p, tools, canvasSize, hoveredId, flock) {
       drawBlock(p, canvasSize);
     } else if (tool.type === 'sheepdog') {
       drawSheepdog(p, canvasSize);
+      if (hasPhysicalRotation) {
+        drawShovelOutline(p, canvasSize);
+      }
     } else if (tool.type === 'grass') {
       p.noStroke();
       p.fill(color);
@@ -331,6 +334,39 @@ function drawSheepdog(p, s) {
     r * 0.48,
     r * 0.32 - earFlap,
   );
+  p.pop();
+}
+
+function drawShovelOutline(p, s) {
+  // Shovel shape in dog-local space: +x = forward, ±y = sides.
+  // Dimensions derived from SHEEP.dogShovelHalfFlat and SHEEP.dogShovelArmLen
+  // so the visual exactly matches the physics zone.
+  const r = TOOL_SIZES.sheepdog * s; // dog radius in pixels
+  const W = (SHEEP.dogShovelHalfFlat / TOOL_SIZES.sheepdog) * r; // = 3r
+  const Ax = (SHEEP.dogShovelArmLen / TOOL_SIZES.sheepdog) * r * Math.SQRT1_2; // ≈ 1.41r
+  const Ay = Ax; // 45° arm: forward and side extents are equal
+
+  // Four key points of the shovel (open U-shape, opening toward dog)
+  const upperFlatX = 0; const upperFlatY = -W; // upper end of flat face
+  const lowerFlatX = 0; const lowerFlatY = +W; // lower end of flat face
+  const upperTipX = Ax; const upperTipY = -(W + Ay); // upper 45° arm tip
+  const lowerTipX = Ax; const lowerTipY = +(W + Ay); // lower 45° arm tip
+
+  p.push();
+  p.noFill();
+  p.stroke(255, 220, 50, 210); // golden yellow, semi-transparent
+  p.strokeWeight(r * 0.18);
+  p.strokeCap(p.ROUND);
+  p.strokeJoin(p.ROUND);
+
+  // Draw as an open polyline: upper tip → upper flat → lower flat → lower tip
+  p.beginShape();
+  p.vertex(upperTipX, upperTipY);
+  p.vertex(upperFlatX, upperFlatY);
+  p.vertex(lowerFlatX, lowerFlatY);
+  p.vertex(lowerTipX, lowerTipY);
+  p.endShape(); // intentionally open — no CLOSE
+
   p.pop();
 }
 
