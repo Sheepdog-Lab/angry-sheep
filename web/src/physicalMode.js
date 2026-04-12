@@ -20,7 +20,7 @@ function applyFlipToRotation(angle, flipX, flipY) {
 export function getObjectTypeFromMarker(id) {
   if (SHEEPDOG_IDS.has(id)) return 'sheepdog';
   if (GRASS_IDS.has(id)) return 'grass';
-  if (id >= 6 && id <= 11) return 'block';
+  if (id >= 6 && id <= 20) return 'block';
   return null;
 }
 

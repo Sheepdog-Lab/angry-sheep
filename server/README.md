@@ -83,7 +83,7 @@ You can still send **`{"cmd":"setCameraIndex","index":N}`** to change which devi
 
 ## False-positive IDs
 
-OpenCV can briefly “see” wrong marker IDs (e.g. 17, 37) on glare or clutter. By default **`server.py` only emits IDs 0–10**, matching `markers/generate_markers.py`. Change **`ALLOWED_MARKER_IDS`** in `server.py` to `None` for all 0–49, or `frozenset({...})` for a custom set. Match **`allowedMarkerIds`** in `web/src/config.js` for the overlay.
+OpenCV can briefly “see” wrong marker IDs (e.g. 17, 37) on glare or clutter. **`ALLOWED_MARKER_IDS`** in `server.py` is **`None` by default** (all IDs 0–49 for DICT_4X4_50). Set it to `frozenset({...})` to restrict output. Match **`allowedMarkerIds`** in `web/src/config.js` for the overlay. Physical **block** markers are mapped in **`web/src/physicalMode.js`** (IDs **6–20**).
 
 ## JSON over WebSocket (one message per frame)
 

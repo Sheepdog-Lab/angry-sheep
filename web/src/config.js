@@ -332,8 +332,11 @@ export const MARKER_STREAM = {
    * Physical-mode object mapping still decides which IDs become game objects.
    */
   allowedMarkerIds: null,
-  /** 0–1: lower = stickier smoothing with less visible jitter */
-  smoothAlpha: 0.16,
+  /**
+   * 0–1 blend toward each new sample each frame. Higher = snappier physical tools
+   * (less “laggy” follow); lower = smoother but slower on the table. Use 1 for no smoothing.
+   */
+  smoothAlpha: 1,
   /** Hold detections longer before hiding them to reduce blinking */
   holdMissFrames: 45,
   /** Ignore only very large jumps to keep distant markers from vanishing */
@@ -342,7 +345,8 @@ export const MARKER_STREAM = {
 
 export const PHYSICAL_MODE = {
   angleOffsetRad: 0,
-  rotationSmoothAlpha: 0.22,
+  /** Higher = marker rotation catches up faster (same tradeoff as MARKER_STREAM.smoothAlpha). */
+  rotationSmoothAlpha: 1,
   debugArrowLength: 0.05,
   sheepdogForwardConeDotMin: 0.15,
 };

@@ -209,6 +209,11 @@ camera_commands = asyncio.Queue()
 _browser_bgr = None
 _browser_mono = 0.0
 BROWSER_FRAME_TTL_SEC = 0.55
+# After each broadcast, yield so the WebSocket task can ingest new JPEGs.
+# 0 = one event-loop tick only (max throughput; raise if WS ingest starves on slow machines).
+STREAM_LOOP_YIELD_SEC = 0.0
+# When the latest browser JPEG was already streamed, skip ArUco (saves CPU).
+_last_streamed_browser_mono = None
 
 load_calibration()
 
@@ -406,7 +411,7 @@ async def broadcast_markers_json(message: str):
 
 
 async def capture_and_stream_loop():
-    global cap, CAMERA_INDEX
+    global cap, CAMERA_INDEX, _last_streamed_browser_mono
     while True:
         try:
             while True:
@@ -428,10 +433,19 @@ async def capture_and_stream_loop():
         except asyncio.QueueEmpty:
             pass
 
-        frame, _src = take_frame_for_detection()
+        frame, src = take_frame_for_detection()
         if frame is None:
             await asyncio.sleep(0.05)
             continue
+
+        if src == "browser":
+            mono = _browser_mono
+            if mono == _last_streamed_browser_mono:
+                await asyncio.sleep(0)
+                continue
+            _last_streamed_browser_mono = mono
+        else:
+            _last_streamed_browser_mono = None
 
         w, h, markers, debug_frame, processed = detect_markers_bgr(frame)
         message = json.dumps(
@@ -449,7 +463,7 @@ async def capture_and_stream_loop():
             cv2.waitKey(1)
 
         await broadcast_markers_json(message)
-        await asyncio.sleep(0.03)
+        await asyncio.sleep(STREAM_LOOP_YIELD_SEC)
 
 
 async def main():

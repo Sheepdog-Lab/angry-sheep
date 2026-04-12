@@ -6,8 +6,9 @@
 import { sendTrackingCommand, onMarkerWsOpen } from './markerStream.js';
 
 const MAX_WIDTH = 960;
-const INTERVAL_MS = 50;
-const JPEG_QUALITY = 0.9;
+/** Shorter interval = more tracking updates/sec (snappier physical objects), more CPU. */
+const INTERVAL_MS = 16;
+const JPEG_QUALITY = 0.78;
 
 let timer = null;
 const canvas = document.createElement('canvas');

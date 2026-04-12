@@ -2,7 +2,7 @@
 
 The server uses **DICT_4X4_50** (`cv2.aruco.DICT_4X4_50`). Print markers on stiff paper with even lighting for reliable tracking.
 
-## Step 5 — Generate PNGs for printing (IDs 0–10)
+## Step 5 — Generate PNGs for printing
 
 From the **repo root**, with the same Python venv as the server:
 
@@ -14,6 +14,13 @@ python markers/generate_markers.py
 
 Defaults: **IDs 0–10**, **400×400 px** per marker, output folder **`markers/generated/`**.
 
+**Physical game blocks (fence pieces)** use ArUco IDs **6–20** in `web/src/physicalMode.js`. Generate those (or any subset) with:
+
+```bash
+python markers/generate_markers.py --ids 6-20 --size 400
+python markers/generate_markers.py --ids 11-20 --size 500   # extra block markers only
+```
+
 Options:
 
 ```bash
@@ -22,7 +29,7 @@ python markers/generate_markers.py --ids 3        # single id
 python markers/generate_markers.py --out /tmp/markers
 ```
 
-Files look like: `aruco_4x4_50_id_00.png` … `aruco_4x4_50_id_10.png`.
+Files look like: `aruco_4x4_50_id_00.png` … `aruco_4x4_50_id_20.png` (depending on `--ids`).
 
 **Printing:** Use **100% scale** (disable “fit to page”) so physical size matches what you expect; larger markers are easier for the webcam.
 
