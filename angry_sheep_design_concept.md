@@ -33,13 +33,14 @@ The design concept is grounded in participatory design research conducted with c
 
 ### How It Works
 
-A circular table displays a **projected scene** with digital sheep wandering around. An open-sided pen sits in the center. Children work together using **physical tools placed on the table** to guide the sheep into the pen.
+A **translucent circular table** displays a **projected scene** with digital sheep wandering around. The projector and camera are both mounted *beneath* the tabletop — the projector throws the scene up through the glass, while the camera reads ArUco fiducial markers printed on the undersides of each physical tool. A **built-in microphone and speaker** are also embedded in the table itself — the mic picks up children's voices for keyword-based emotional mechanics, and the speaker plays sheep sounds, calming audio, and celebration music. An open-sided pen sits at the center of the scene. Children work together using **physical tools placed on the table** to guide the sheep into the pen.
 
 ### Physical Tools
 
 1. **Blocks** — Create barriers and channels to funnel sheep toward the pen.
 2. **Sheepdogs** — Actively steer and push sheep in a direction.
 3. **Grass objects** — Attract and feed sheep (used for calming and luring).
+4. **Brushes** — Physical grooming tools children use to brush and pet the digital sheep's fur; a core calming action during crisis mode.
 
 ### Emotional Mechanics (Crisis Mode)
 
@@ -49,8 +50,8 @@ This is the core of the experience:
 2. **Crisis behavior:** The sheep turns red, moves erratically, speeds up, and stops responding to the sheepdogs. Rough handling can also cause sheep to multiply, making the task harder.
 3. **De-escalation methods (the only way to succeed):**
    - Feeding the sheep grass
-   - Petting the projected sheep on the table surface
-   - Speaking encouragement into a microphone (voice recognition detects positive vs. negative language)
+   - **Brushing/petting** the projected sheep with the physical brush tool on the table surface
+   - Speaking encouragement into the **built-in table microphone** (keyword detection recognizes supportive language; triggers a calming response on nearby angry sheep)
 4. **Hint system:** If a child is unsuccessful for 1 minute, a hint bubble appears suggesting a calming action (e.g., a feeding icon or petting animation).
 5. **Timer:** A 2–4 minute timer creates urgency without being overwhelming.
 
@@ -59,6 +60,7 @@ This is the core of the experience:
 - **Small wins:** Celebration animation each time a single sheep is successfully guided into the pen.
 - **Big celebration:** A larger reward animation when all sheep are corralled.
 - Visual feedback clearly shows sheep emotional states throughout (color changes, movement speed).
+- **Audio feedback** through the built-in table speaker reinforces emotional states — ambient sheep sounds, agitated bleats during crisis, calming tones as sheep de-escalate, and celebration music on wins.
 
 ---
 
