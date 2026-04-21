@@ -46,7 +46,7 @@ import {
   drawTerrainAmbientGrass,
   updateGrassSheepInteraction,
 } from './terrainGrass.js';
-import { initSound, fadeAudio, setEatGrassActive } from './sound.js';
+import { initSound, fadeAudio, setEatGrassActive, initMasterVolumeButton } from './sound.js';
 import { initHintButtons } from './hintButtons.js';
 import { getTopButtonRow } from './topButtonRow.js';
 import { initTableProjection } from './tableProjection.js';
@@ -184,9 +184,10 @@ new p5((p) => {
     initSound();
     // Order matters: each of these appends one button to the shared
     // top-right row in left-to-right visual order.
-    initResetButton();   // 1st  → leftmost  (Reset the Game)
-    initHintButtons();   // 2nd  → middle    (Reset the Sound), plus rows 2 + 3
-    initTuning();        // 3rd  → rightmost (Tune)
+    initResetButton();          // 1st  → leftmost  (Reset the Game)
+    initHintButtons();          // 2nd              (Reset the Sound), plus rows 2 + 3
+    initMasterVolumeButton();   // 3rd              (speaker / master volume popover)
+    initTuning();               // 4th  → rightmost (Tune)
     connectMarkerStream();
 
     notifyViewportChange = () => {

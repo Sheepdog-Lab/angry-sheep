@@ -1,5 +1,7 @@
 // -- Background audio + SFX manager with per-track volume control --
 
+import { getTopButtonRow, getHudHost } from './topButtonRow.js';
+
 const TRACKS = [
   { id: 'farm',  label: 'Farm ambience',   src: '/farm-sound.mp3',  defaultVol: 1.0, gain: 2.0 },
   { id: 'grass', label: 'Grass rustling',   src: '/grass-rustled.mp3', defaultVol: 0.10 },
@@ -49,6 +51,7 @@ let eatGrassMuted = false;
 let eatGrassPlaying = false;
 let muted = false;
 let playing = false;
+let masterVolume = 1.0;
 
 // -- Persistence --
 
@@ -59,7 +62,7 @@ function loadSettings() {
 }
 
 function saveSettings() {
-  const data = { muted };
+  const data = { muted, master: masterVolume };
   for (const [id, p] of players) {
     data[id] = p.volume;
     data[id + '_m'] = p.muted;
@@ -85,6 +88,7 @@ function initPlayers() {
   playersInited = true;
   const saved = loadSettings();
   muted = saved.muted ?? false;
+  masterVolume = saved.master ?? 1.0;
 
   for (const track of TRACKS) {
     const audio = new Audio(track.src);
@@ -159,13 +163,16 @@ let fadeMul = 0;
 
 function applyVolumes() {
   for (const [, p] of players) {
-    const vol = (muted || p.muted || p._tempMute) ? 0 : p.volume * fadeMul;
+    const vol = (muted || p.muted || p._tempMute) ? 0 : p.volume * fadeMul * masterVolume;
     if (p.gainNode) {
       // GainNode controls volume; audio.volume stays at 1
       p.gainNode.gain.value = vol * p.maxGain;
     } else {
       p.audio.volume = vol;
     }
+  }
+  if (eatGrassPlaying && eatGrassAudio) {
+    eatGrassAudio.volume = eatGrassVolume * masterVolume;
   }
 }
 
@@ -217,7 +224,7 @@ export function setEatGrassActive(active) {
     return;
   }
   if (active && !eatGrassPlaying) {
-    eatGrassAudio.volume = eatGrassVolume;
+    eatGrassAudio.volume = eatGrassVolume * masterVolume;
     eatGrassAudio.play().catch(() => {});
     eatGrassPlaying = true;
   } else if (!active && eatGrassPlaying) {
@@ -245,7 +252,7 @@ export function playSfx(id) {
     src = entry.src;
   }
   const audio = new Audio(src);
-  audio.volume = entry.volume;
+  audio.volume = entry.volume * masterVolume;
   audio.play().catch(() => {});
 }
 
@@ -283,6 +290,8 @@ let visible = false;
 const uiRows = [];
 let globalMuteBtn = null;
 let updateGlobalMuteLabel = null;
+let masterSlider = null;
+let masterValLabel = null;
 
 const BTN_STYLE = {
   padding: '2px 6px', border: '1px solid #666', borderRadius: '3px',
@@ -293,6 +302,9 @@ const BTN_STYLE = {
 function resetToDefaults() {
   muted = false;
   if (updateGlobalMuteLabel) updateGlobalMuteLabel();
+  masterVolume = 1.0;
+  if (masterSlider) masterSlider.value = masterVolume;
+  if (masterValLabel) masterValLabel.textContent = Math.round(masterVolume * 100) + '%';
 
   let idx = 0;
   for (const track of TRACKS) {
@@ -382,6 +394,44 @@ export function initSoundPanel() {
     border: '1px solid #555',
   });
 
+  // Master volume — single control that scales everything
+  const masterRow = document.createElement('div');
+  masterRow.style.marginBottom = '10px';
+  const masterTop = document.createElement('div');
+  Object.assign(masterTop.style, {
+    display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px',
+  });
+  const masterLabel = document.createElement('span');
+  masterLabel.textContent = 'Master';
+  masterLabel.style.flex = '1';
+  masterLabel.style.fontWeight = 'bold';
+  masterLabel.style.color = '#fff';
+  masterValLabel = document.createElement('span');
+  masterValLabel.style.color = '#999';
+  masterValLabel.style.minWidth = '32px';
+  masterValLabel.style.textAlign = 'right';
+  masterValLabel.textContent = Math.round(masterVolume * 100) + '%';
+  masterTop.appendChild(masterLabel);
+  masterTop.appendChild(masterValLabel);
+  masterSlider = document.createElement('input');
+  masterSlider.type = 'range';
+  masterSlider.min = 0;
+  masterSlider.max = 1;
+  masterSlider.step = 0.01;
+  masterSlider.value = masterVolume;
+  Object.assign(masterSlider.style, {
+    width: '100%', accentColor: '#fff', cursor: 'pointer',
+  });
+  masterSlider.addEventListener('input', () => {
+    masterVolume = parseFloat(masterSlider.value);
+    masterValLabel.textContent = Math.round(masterVolume * 100) + '%';
+    applyVolumes();
+    saveSettings();
+  });
+  masterRow.appendChild(masterTop);
+  masterRow.appendChild(masterSlider);
+  panel.appendChild(masterRow);
+
   // Top buttons row: global mute + reset
   const topRow = document.createElement('div');
   Object.assign(topRow.style, {
@@ -446,14 +496,14 @@ export function initSoundPanel() {
           a.volume = 1;
           const src = audioCtx.createMediaElementSource(a);
           const g = audioCtx.createGain();
-          g.gain.value = vol * maxGain;
+          g.gain.value = vol * maxGain * masterVolume;
           src.connect(g);
           g.connect(audioCtx.destination);
           a.play().catch(() => {});
           setTimeout(() => { a.pause(); a.currentTime = 0; }, 3000);
         } else {
           const a = new Audio(track.src);
-          a.volume = vol;
+          a.volume = vol * masterVolume;
           a.play().catch(() => {});
           setTimeout(() => { a.pause(); a.currentTime = 0; }, 3000);
         }
@@ -474,7 +524,7 @@ export function initSoundPanel() {
       isMuted: eatGrassMuted,
       onVolume(val) {
         eatGrassVolume = val;
-        if (eatGrassAudio && eatGrassPlaying) eatGrassAudio.volume = val;
+        if (eatGrassAudio && eatGrassPlaying) eatGrassAudio.volume = val * masterVolume;
         saveSettings();
       },
       onMute(m) {
@@ -488,7 +538,7 @@ export function initSoundPanel() {
       },
       onTest(vol) {
         const a = new Audio(EAT_GRASS.src);
-        a.volume = vol;
+        a.volume = vol * masterVolume;
         a.play().catch(() => {});
         setTimeout(() => { a.pause(); a.currentTime = 0; }, 3000);
       },
@@ -533,7 +583,7 @@ export function initSoundPanel() {
       for (const def of defs) {
         const s = sfxPlayers.get(def.id);
         const a = new Audio(def.src);
-        a.volume = s.volume;
+        a.volume = s.volume * masterVolume;
         a.play().catch(() => {});
       }
     });
@@ -559,7 +609,7 @@ export function initSoundPanel() {
       },
       onTest(vol) {
         const a = new Audio(def.src);
-        a.volume = vol;
+        a.volume = vol * masterVolume;
         a.play().catch(() => {});
       },
     });
@@ -586,7 +636,7 @@ export function initSoundPanel() {
         const i = poolIndex.get(def.id) || 0;
         const a = new Audio(def.srcs[i]);
         poolIndex.set(def.id, (i + 1) % def.srcs.length);
-        a.volume = vol;
+        a.volume = vol * masterVolume;
         a.play().catch(() => {});
       },
     });
@@ -715,4 +765,90 @@ function buildTrackRow({ label, volume, isMuted, onVolume, onMute, onTest }) {
       onMute(m);
     },
   };
+}
+
+/**
+ * Speaker button in the top-right row that toggles a master-volume popover.
+ * The popover closes when clicking outside.
+ */
+export function initMasterVolumeButton() {
+  initPlayers();
+
+  const btn = document.createElement('button');
+  btn.textContent = '🔊'; // speaker icon
+  btn.setAttribute('aria-label', 'Master volume');
+  btn.title = 'Master volume';
+  Object.assign(btn.style, {
+    padding: '6px 12px', background: '#333', color: '#fff',
+    border: '1px solid #666', borderRadius: '4px', cursor: 'pointer',
+    fontFamily: 'monospace', fontSize: '14px', lineHeight: '1',
+  });
+  getTopButtonRow().appendChild(btn);
+
+  const popover = document.createElement('div');
+  Object.assign(popover.style, {
+    position: 'fixed', top: '48px', right: '10px', zIndex: '1001',
+    background: 'rgba(30,30,30,0.92)', color: '#ddd',
+    padding: '10px 12px', borderRadius: '6px',
+    fontFamily: 'monospace', fontSize: '12px',
+    border: '1px solid #555', minWidth: '200px',
+    display: 'none',
+  });
+
+  const header = document.createElement('div');
+  Object.assign(header.style, {
+    display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px',
+  });
+  const label = document.createElement('span');
+  label.textContent = 'Master';
+  label.style.flex = '1';
+  label.style.fontWeight = 'bold';
+  label.style.color = '#fff';
+  const valLabel = document.createElement('span');
+  valLabel.style.color = '#999';
+  valLabel.style.minWidth = '36px';
+  valLabel.style.textAlign = 'right';
+  valLabel.textContent = Math.round(masterVolume * 100) + '%';
+  header.appendChild(label);
+  header.appendChild(valLabel);
+
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.min = 0;
+  slider.max = 1;
+  slider.step = 0.01;
+  slider.value = masterVolume;
+  Object.assign(slider.style, {
+    width: '100%', accentColor: '#fff', cursor: 'pointer',
+  });
+  slider.addEventListener('input', () => {
+    masterVolume = parseFloat(slider.value);
+    valLabel.textContent = Math.round(masterVolume * 100) + '%';
+    applyVolumes();
+    saveSettings();
+  });
+
+  popover.appendChild(header);
+  popover.appendChild(slider);
+  getHudHost().appendChild(popover);
+
+  let popVisible = false;
+  const setVisible = (v) => {
+    popVisible = v;
+    popover.style.display = v ? 'block' : 'none';
+  };
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const next = !popVisible;
+    setVisible(next);
+    if (next) document.dispatchEvent(new CustomEvent('panel-open', { detail: 'master' }));
+  });
+  document.addEventListener('panel-open', (e) => {
+    if (e.detail !== 'master' && popVisible) setVisible(false);
+  });
+  popover.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => {
+    if (popVisible) setVisible(false);
+  });
 }
