@@ -16,6 +16,10 @@
       position: relative;
       font-family: system-ui, -apple-system, sans-serif;
     }
+    body.floor-projected {
+      transform: rotate(180deg);
+      transform-origin: center center;
+    }
     canvas {
       display: block;
       width: 100%;
@@ -213,6 +217,14 @@
       background: #111;
       object-fit: cover;
     }
+    video.webcam-feed {
+      transform: scaleX(-1);
+      transform-origin: center center;
+    }
+    body.floor-projected video.webcam-feed {
+      transform: rotate(180deg) scaleX(-1);
+      transform-origin: center center;
+    }
     .calibration-key {
       position: fixed;
       left: 16px;
@@ -285,6 +297,7 @@
   <div class="camera-panel" id="cameraPanel" aria-label="Camera preview">
     <div class="camera-panel-header">
       <button type="button" id="cameraToggle" class="camera-on-off-toggle" aria-pressed="false" title="Turn camera on or off">Camera Off</button>
+      <button type="button" id="floorProjectionToggle" class="camera-on-off-toggle" aria-pressed="false" title="Toggle floor projection rotation">Floor Projection: Off</button>
       <button type="button" id="cameraPanelToggle" class="camera-panel-toggle" aria-expanded="true" aria-controls="camera-panel-body" title="Hide camera controls">
         Hide
       </button>

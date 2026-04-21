@@ -34,12 +34,14 @@ SHOW_DEBUG_WINDOWS = False
 CALIBRATION_PATH = Path(__file__).with_name("calibration.json")
 CALIBRATION_ORDER = ("top", "right", "bottom", "left")
 TABLE_RADIUS = 0.48
+CALIBRATION_RADIUS_SCALE = 0.864  # moved another 20% wider from the 0.72 setting
+CALIBRATION_RADIUS = TABLE_RADIUS * CALIBRATION_RADIUS_SCALE
 SCREEN_POINTS = np.float32(
     [
-        [0.5, 0.5 - TABLE_RADIUS],
-        [0.5 + TABLE_RADIUS, 0.5],
-        [0.5, 0.5 + TABLE_RADIUS],
-        [0.5 - TABLE_RADIUS, 0.5],
+        [0.5, 0.5 - CALIBRATION_RADIUS],
+        [0.5 + CALIBRATION_RADIUS, 0.5],
+        [0.5, 0.5 + CALIBRATION_RADIUS],
+        [0.5 - CALIBRATION_RADIUS, 0.5],
     ]
 )
 

@@ -63,7 +63,8 @@ initFullscreenControls(() => {
 function drawCalibrationCircleTargets(p, canvasSize) {
   const cx = canvasSize / 2;
   const cy = canvasSize / 2;
-  const r = TABLE_RADIUS * canvasSize;
+  const CALIBRATION_RADIUS_SCALE = 0.864; // keep in sync with server calibration target radius
+  const r = TABLE_RADIUS * CALIBRATION_RADIUS_SCALE * canvasSize;
   const points = [
     { x: cx, y: cy - r, label: '1' },
     { x: cx + r, y: cy, label: '2' },

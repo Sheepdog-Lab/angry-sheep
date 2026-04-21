@@ -14,10 +14,10 @@ python markers/generate_markers.py
 
 Defaults: **IDs 0–10**, **400×400 px** per marker, output folder **`markers/generated/`**.
 
-**Physical game blocks (fence pieces)** use ArUco IDs **6–20** in `web/src/physicalMode.js`. Generate those (or any subset) with:
+**Physical game blocks (fence pieces)** use ArUco IDs **7–20** in `web/src/physicalMode.js`. Generate those (or any subset) with:
 
 ```bash
-python markers/generate_markers.py --ids 6-20 --size 400
+python markers/generate_markers.py --ids 7-20 --size 400
 python markers/generate_markers.py --ids 11-20 --size 500   # extra block markers only
 ```
 

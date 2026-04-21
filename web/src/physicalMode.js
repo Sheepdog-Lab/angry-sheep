@@ -1,8 +1,9 @@
 import { PHYSICAL_MODE, TOOL_COLORS } from './config.js';
 import { applyPhysicalMarkerFlip } from './markerCalibration.js';
 
-const SHEEPDOG_IDS = new Set([0, 1, 2, 3]);
-const GRASS_IDS = new Set([4, 5]);
+/** ArUco DICT_4X4_50 ids → tools: dogs 0–2, grass 3–4, 5–6 unused, blocks 7–20 */
+const SHEEPDOG_IDS = new Set([0, 1, 2]);
+const GRASS_IDS = new Set([3, 4]);
 const rotationByMarkerId = new Map();
 
 function lerpAngleRad(a, b, t) {
@@ -20,7 +21,7 @@ function applyFlipToRotation(angle, flipX, flipY) {
 export function getObjectTypeFromMarker(id) {
   if (SHEEPDOG_IDS.has(id)) return 'sheepdog';
   if (GRASS_IDS.has(id)) return 'grass';
-  if (id >= 6 && id <= 20) return 'block';
+  if (id >= 7 && id <= 20) return 'block';
   return null;
 }
 

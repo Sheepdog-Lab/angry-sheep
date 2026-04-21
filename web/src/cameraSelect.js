@@ -12,9 +12,53 @@ import { setGameMode } from './gameMode.js';
 const STORAGE_KEY = 'angrySheepCameraDeviceId';
 const PANEL_COLLAPSED_KEY = 'angrySheepCameraPanelCollapsed';
 const CAMERA_ENABLED_KEY = 'angrySheepCameraEnabled';
+const FLOOR_PROJECTION_KEY = 'angrySheepFloorProjection';
 
 let currentStream = null;
 let cameraActive = false;
+
+function setFloorProjection(enabled) {
+  document.body.classList.toggle('floor-projected', !!enabled);
+  try {
+    localStorage.setItem(FLOOR_PROJECTION_KEY, enabled ? '1' : '0');
+  } catch (e) {
+    /* private mode */
+  }
+  const btn = document.getElementById('floorProjectionToggle');
+  if (btn) {
+    btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    btn.textContent = enabled ? 'Floor Projection: On' : 'Floor Projection: Off';
+  }
+}
+
+export function enableFloorProjection() {
+  setFloorProjection(true);
+}
+
+export function disableFloorProjection() {
+  setFloorProjection(false);
+}
+
+function initFloorProjectionToggle() {
+  let enabled = false;
+  try {
+    enabled = localStorage.getItem(FLOOR_PROJECTION_KEY) === '1';
+  } catch (e) {
+    /* ignore */
+  }
+  setFloorProjection(enabled);
+
+  const btn = document.getElementById('floorProjectionToggle');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    setFloorProjection(!document.body.classList.contains('floor-projected'));
+  });
+}
+
+if (typeof window !== 'undefined') {
+  window.enableFloorProjection = enableFloorProjection;
+  window.disableFloorProjection = disableFloorProjection;
+}
 
 /* ── UI helpers ── */
 
@@ -107,6 +151,10 @@ function stopCurrentStream() {
   }
 }
 
+export function stopWebcam() {
+  stopCurrentStream();
+}
+
 export function stopCamera() {
   stopCurrentStream();
   cameraActive = false;
@@ -131,9 +179,15 @@ export async function startCamera(deviceId) {
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: { exact: deviceId } },
+      video: {
+        deviceId: { exact: deviceId },
+        facingMode: 'user',
+      },
     });
     currentStream = stream;
+    video.classList.add('webcam-feed');
+    video.autoplay = true;
+    video.playsInline = true;
     video.srcObject = stream;
     await video.play().catch(() => {});
     const onReady = () => startBrowserFramePump();
@@ -199,6 +253,7 @@ export async function initCameraSwitcher() {
   );
 
   initCameraPanelToggle();
+  initFloorProjectionToggle();
 
   const select = getSelectEl();
   const video = getVideoEl();
@@ -216,7 +271,9 @@ export async function initCameraSwitcher() {
   }
 
   video.setAttribute('playsinline', '');
+  video.setAttribute('autoplay', '');
   video.setAttribute('muted', '');
+  video.classList.add('webcam-feed');
   video.muted = true;
 
   let permissionStream = null;
