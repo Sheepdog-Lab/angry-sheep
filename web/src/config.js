@@ -325,8 +325,6 @@ export const SHEEP = {
 // Optional: web/.env with VITE_MARKER_WS_URL=ws://192.168.1.5:8765
 export const MARKER_STREAM = {
   wsUrl: import.meta.env.VITE_MARKER_WS_URL || 'ws://127.0.0.1:8765',
-  /** Flip horizontal mapping if your webcam preview is mirrored vs physical table */
-  mirrorX: false,
   dotRadiusPx: 10,
   showLabels: true,
   /**

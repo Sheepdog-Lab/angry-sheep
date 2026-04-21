@@ -47,6 +47,31 @@ function scheduleReconnect() {
   }, 2000);
 }
 
+/**
+ * Reflect marker center through normalized playfield center (0.5, 0.5): x' = 1 - x, y' = 1 - y,
+ * so digital ArUco dots and physical tools line up with the real tag on the glass table.
+ * Heading turns 180° with the same reflection; dir_* flips as a vector through the center.
+ */
+function reflectMarkerAcrossTableCenter(m) {
+  if (!m || typeof m.x !== 'number' || typeof m.y !== 'number') return m;
+  const out = { ...m, x: 1 - m.x, y: 1 - m.y };
+  if (typeof m.angle_deg === 'number') {
+    let ad = m.angle_deg + 180;
+    while (ad > 180) ad -= 360;
+    while (ad <= -180) ad += 360;
+    out.angle_deg = ad;
+  }
+  if (typeof m.angle === 'number') {
+    let ar = m.angle + Math.PI;
+    while (ar > Math.PI) ar -= 2 * Math.PI;
+    while (ar <= -Math.PI) ar += 2 * Math.PI;
+    out.angle = ar;
+  }
+  if (typeof m.dir_x === 'number') out.dir_x = -m.dir_x;
+  if (typeof m.dir_y === 'number') out.dir_y = -m.dir_y;
+  return out;
+}
+
 function applySmoothing(rawMarkers) {
   const { smoothAlpha, holdMissFrames, maxJumpPx, allowedMarkerIds } = MARKER_STREAM;
   const a = Math.min(1, Math.max(0.05, smoothAlpha));
@@ -164,10 +189,11 @@ export function connectMarkerStream() {
           : calibration;
         list = Array.isArray(data.markers) ? data.markers : [];
       }
-      rawMarkers = list.filter(
+      const filtered = list.filter(
         (m) => m && typeof m.id === 'number' && typeof m.x === 'number' && typeof m.y === 'number',
       );
-      applySmoothing(list);
+      rawMarkers = filtered.map((m) => reflectMarkerAcrossTableCenter(m));
+      applySmoothing(rawMarkers);
     } catch (e) {
       /* ignore bad frames */
     }

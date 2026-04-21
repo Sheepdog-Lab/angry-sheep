@@ -16,8 +16,10 @@
       position: relative;
       font-family: system-ui, -apple-system, sans-serif;
     }
-    body.floor-projected {
-      transform: rotate(180deg);
+    /* body.table-projection = state only (webcam CSS + pointer remap); flip is on #gameStage */
+    #gameStage.table-projection-visual {
+      /* 180° + vertical mirror (opposite chirality vs rotate(180) scaleX(-1) for glass / floor projection) */
+      transform: rotate(180deg) scaleY(-1);
       transform-origin: center center;
     }
     canvas {
@@ -74,9 +76,18 @@
     .recalibrate-button:hover {
       background: #ffffff;
     }
+    .table-projection-button:hover:not(.table-projection-button--on) {
+      background: #f3f4f6;
+      border-color: #64748b;
+    }
+    .table-projection-button--on:hover {
+      background: #16a34a;
+      border-color: #14532d;
+    }
     .fullscreen-launch:focus-visible,
     .fullscreen-exit:focus-visible,
     .recalibrate-button:focus-visible,
+    .table-projection-button:focus-visible,
     .camera-panel-toggle:focus-visible,
     #cameraSelect:focus-visible {
       outline: 3px solid #8ab4ff;
@@ -217,13 +228,47 @@
       background: #111;
       object-fit: cover;
     }
+    /* Webcam: mirror for a natural selfie when the page is not table-corrected */
     video.webcam-feed {
       transform: scaleX(-1);
       transform-origin: center center;
     }
-    body.floor-projected video.webcam-feed {
-      transform: rotate(180deg) scaleX(-1);
+    /* Undo game-stage flip on the webcam preview (camera panel is not transformed) */
+    body.table-projection video.webcam-feed {
+      /* Keep selfie mirror, then match game-stage correction */
+      transform: scaleX(-1) rotate(180deg) scaleY(-1);
       transform-origin: center center;
+    }
+    /* Bottom stack: Table Projection (above) → Recalibrate → Full Screen — not transformed */
+    .table-projection-button {
+      display: block;
+      position: fixed;
+      right: 24px;
+      bottom: 260px;
+      z-index: 10001;
+      min-width: 168px;
+      min-height: 64px;
+      padding: 10px 14px;
+      border: 3px solid #94a3b8;
+      border-radius: 18px;
+      background: #e2e8f0;
+      color: #1e293b;
+      cursor: pointer;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+      font-weight: 800;
+      font-size: 0.72rem;
+      line-height: 1.2;
+      letter-spacing: 0.02em;
+      text-align: center;
+      white-space: pre-line;
+    }
+    .table-projection-button--on {
+      background: #22c55e;
+      color: #052e16;
+      border-color: #15803d;
+      box-shadow:
+        0 0 0 4px rgba(34, 197, 94, 0.45),
+        0 12px 32px rgba(21, 128, 61, 0.45);
     }
     .calibration-key {
       position: fixed;
@@ -267,6 +312,16 @@
   >
     Recalibrate
   </button>
+  <button
+    type="button"
+    id="tableProjectionButton"
+    class="table-projection-button"
+    aria-pressed="false"
+    title="Rotate and mirror only the play area (green circle) for glass-table projection"
+  >
+    Table Projection
+    ○ OFF
+  </button>
   <div id="fullscreenApp" class="fullscreen-app">
     <div id="gameStage" class="game-stage" aria-label="Angry Sheep game area"></div>
     <div class="calibration-key" aria-label="Marker calibration controls">
@@ -297,7 +352,6 @@
   <div class="camera-panel" id="cameraPanel" aria-label="Camera preview">
     <div class="camera-panel-header">
       <button type="button" id="cameraToggle" class="camera-on-off-toggle" aria-pressed="false" title="Turn camera on or off">Camera Off</button>
-      <button type="button" id="floorProjectionToggle" class="camera-on-off-toggle" aria-pressed="false" title="Toggle floor projection rotation">Floor Projection: Off</button>
       <button type="button" id="cameraPanelToggle" class="camera-panel-toggle" aria-expanded="true" aria-controls="camera-panel-body" title="Hide camera controls">
         Hide
       </button>

@@ -49,10 +49,12 @@ import {
 import { initSound, fadeAudio, setEatGrassActive } from './sound.js';
 import { initHintButtons } from './hintButtons.js';
 import { getTopButtonRow } from './topButtonRow.js';
+import { initTableProjection } from './tableProjection.js';
 import './browserFramePump.js';
 
 initGameMode();
 initMarkerCalibration();
+initTableProjection();
 initCameraSwitcher().catch((e) => console.warn('[camera] init:', e));
 
 let notifyViewportChange = () => {};
@@ -63,8 +65,9 @@ initFullscreenControls(() => {
 function drawCalibrationCircleTargets(p, canvasSize) {
   const cx = canvasSize / 2;
   const cy = canvasSize / 2;
-  const CALIBRATION_RADIUS_SCALE = 0.864; // keep in sync with server calibration target radius
-  const r = TABLE_RADIUS * CALIBRATION_RADIUS_SCALE * canvasSize;
+  const CALIBRATION_RADIUS_SCALE = 0.864; // keep in sync with server
+  const CALIBRATION_GUIDE_INSET = 0.9; // 10% closer to center; must match server
+  const r = TABLE_RADIUS * CALIBRATION_RADIUS_SCALE * CALIBRATION_GUIDE_INSET * canvasSize;
   const points = [
     { x: cx, y: cy - r, label: '1' },
     { x: cx + r, y: cy, label: '2' },

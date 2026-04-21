@@ -35,7 +35,10 @@ CALIBRATION_PATH = Path(__file__).with_name("calibration.json")
 CALIBRATION_ORDER = ("top", "right", "bottom", "left")
 TABLE_RADIUS = 0.48
 CALIBRATION_RADIUS_SCALE = 0.864  # moved another 20% wider from the 0.72 setting
-CALIBRATION_RADIUS = TABLE_RADIUS * CALIBRATION_RADIUS_SCALE
+# On-screen / homography targets for the 1–4 placement dots: 10% closer to center than
+# TABLE_RADIUS * CALIBRATION_RADIUS_SCALE (play circle TABLE_RADIUS is unchanged).
+CALIBRATION_GUIDE_INSET = 0.9
+CALIBRATION_RADIUS = TABLE_RADIUS * CALIBRATION_RADIUS_SCALE * CALIBRATION_GUIDE_INSET
 SCREEN_POINTS = np.float32(
     [
         [0.5, 0.5 - CALIBRATION_RADIUS],
@@ -320,10 +323,15 @@ def detect_markers_bgr(frame_bgr):
     """
     Run ArUco on one BGR frame. Returns (width, height, markers_list, debug_frame, processed).
     markers_list entries: id, x, y (center px), angle_deg, dir_x, dir_y.
+
+    Upward camera through frosted glass: remap pixel center (cx, cy) -> (w - cx, h - cy),
+    angle -> (360 - raw_deg) % 360, then homography. (Normalized x/y reflection for the playfield
+    is applied in the web client so it matches the projected table.)
     """
     global latest_camera_markers
     gray, processed = preprocess_for_detection(frame_bgr)
     debug_frame = frame_bgr.copy()
+    h, w = frame_bgr.shape[:2]
 
     def run_detect(img):
         if detector is not None:
@@ -345,30 +353,32 @@ def detect_markers_bgr(frame_bgr):
             pts = corners[i][0]
             cx = int(pts[:, 0].mean())
             cy = int(pts[:, 1].mean())
-            latest_camera_markers.append({"id": mid, "x": cx, "y": cy})
+            cx_c = w - cx
+            cy_c = h - cy
+            latest_camera_markers.append({"id": mid, "x": cx_c, "y": cy_c})
             p0, p1 = pts[0], pts[1]
             edx = float(p1[0] - p0[0])
             edy = float(p1[1] - p0[1])
             elen = math.hypot(edx, edy) or 1.0
-            warped = transform_point(cx, cy)
+            raw_deg = math.degrees(math.atan2(edy, edx))
+            angle_deg_corrected = (360.0 - raw_deg) % 360.0
+            warped = transform_point(cx_c, cy_c)
             if warped is not None:
                 tx, ty = warped
             else:
-                h, w = frame_bgr.shape[:2]
-                tx = cx / float(w or 1)
-                ty = cy / float(h or 1)
+                tx = cx_c / float(w or 1)
+                ty = cy_c / float(h or 1)
             markers.append(
                 {
                     "id": mid,
                     "x": round(tx, 6),
                     "y": round(ty, 6),
-                    "angle_deg": round(math.degrees(math.atan2(edy, edx)), 2),
-                    "dir_x": round(edx / elen, 4),
-                    "dir_y": round(edy / elen, 4),
+                    "angle_deg": round(angle_deg_corrected, 2),
+                    "dir_x": round(-edx / elen, 4),
+                    "dir_y": round(-edy / elen, 4),
                 }
             )
 
-    h, w = frame_bgr.shape[:2]
     for idx, pt in enumerate(camera_points):
         label = CALIBRATION_ORDER[idx]
         cv2.circle(debug_frame, (int(pt[0]), int(pt[1])), 10, (0, 255, 255), 2)

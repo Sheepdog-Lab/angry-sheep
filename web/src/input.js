@@ -2,6 +2,7 @@ import { TOOL_COLORS, TOOL_HIT_RADIUS, TOOL_ROTATE_STEP, TABLE_RADIUS, INITIAL_T
 import { hitTest } from './tools.js';
 import * as Session from './session.js';
 import { getGameMode, onGameModeChange } from './gameMode.js';
+import { getCanvasPointer } from './tableProjection.js';
 
 // -- State (matches shared contract) --
 const state = {
@@ -164,12 +165,17 @@ function isInsideCanvas(px, py) {
   return px >= 0 && px <= canvasSize && py >= 0 && py <= canvasSize;
 }
 
+function pointer(p) {
+  return getCanvasPointer(p, canvasSize);
+}
+
 // -- Event handlers --
 
 function onMousePressed() {
   if (getGameMode() !== 'digital') return;
   const p = p5Ref;
-  if (!isInsideCanvas(p.mouseX, p.mouseY)) return;
+  const { x: mx, y: my } = pointer(p);
+  if (!isInsideCanvas(mx, my)) return;
   if (p.mouseButton !== p.LEFT) return;
 
   if (Session.getPhase() === 'win') {
@@ -178,7 +184,7 @@ function onMousePressed() {
 
   mouseIsDown = true;
 
-  const n = normalize(p.mouseX, p.mouseY);
+  const n = normalize(mx, my);
 
   // Check if clicking an existing tool → start drag
   const id = hitTest(state.tools, n.x, n.y);
@@ -195,7 +201,8 @@ function onMouseDragged() {
   if (getGameMode() !== 'digital') return;
   if (dragId === null) return;
   const p = p5Ref;
-  const n = normalize(p.mouseX, p.mouseY);
+  const { x: mx, y: my } = pointer(p);
+  const n = normalize(mx, my);
 
   const tool = state.tools.find((t) => t.id === dragId);
   if (tool) {
@@ -230,7 +237,8 @@ function onMouseReleased() {
 function onMouseWheel(event) {
   if (getGameMode() !== 'digital') return;
   const p = p5Ref;
-  const n = normalize(p.mouseX, p.mouseY);
+  const { x: mx, y: my } = pointer(p);
+  const n = normalize(mx, my);
   const id = hitTest(state.tools, n.x, n.y);
   if (id !== null) {
     const tool = state.tools.find((t) => t.id === id);
@@ -285,11 +293,12 @@ export function updateHover(p) {
     state.pet.y = null;
     return;
   }
-  if (!isInsideCanvas(p.mouseX, p.mouseY)) {
+  const { x: mx, y: my } = pointer(p);
+  if (!isInsideCanvas(mx, my)) {
     hoveredId = null;
     return;
   }
-  const n = normalize(p.mouseX, p.mouseY);
+  const n = normalize(mx, my);
   hoveredId = hitTest(state.tools, n.x, n.y);
 
   // Petting: mouse held down and not dragging a tool

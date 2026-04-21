@@ -38,11 +38,13 @@ export function buildPhysicalTools(markers) {
         : typeof marker.angle_deg === 'number'
           ? ((marker.angle_deg * Math.PI) / 180)
           : 0;
-      const targetRotation = applyFlipToRotation(
+      const baseRot = applyFlipToRotation(
         rawAngleRad + PHYSICAL_MODE.angleOffsetRad,
         flipX,
         flipY,
       );
+      // Opposite spin sense vs physical tag (clockwise ↔ counterclockwise on screen).
+      const targetRotation = Math.atan2(Math.sin(-baseRot), Math.cos(-baseRot));
       const previousRotation = rotationByMarkerId.has(marker.id)
         ? rotationByMarkerId.get(marker.id)
         : targetRotation;

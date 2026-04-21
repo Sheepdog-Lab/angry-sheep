@@ -22,7 +22,7 @@ npm install
 npm run dev
 ```
 
-Opens at **http://localhost:5173/** (Vite’s default). **Tools** still use mock mouse/keyboard. **Printed ArUco markers** appear as colored dots when **`python server/server.py`** is running (WebSocket `ws://127.0.0.1:8765`). If left/right feels reversed, set `mirrorX: true` under `MARKER_STREAM` in `web/src/config.js`. If `npm install` / `vite` fails on an old Node, use **`dev/web-node14/`** (see `dev/web-node14/README.md`).
+Opens at **http://localhost:5173/** (Vite’s default). **Tools** still use mock mouse/keyboard. **Printed ArUco markers** appear as colored dots when **`python server/server.py`** is running (WebSocket `ws://127.0.0.1:8765`). In physical mode, press **X** / **Y** to flip marker left-right or top-bottom if they feel reversed vs the table. If `npm install` / `vite` fails on an old Node, use **`dev/web-node14/`** (see `dev/web-node14/README.md`).
 
 ### Controls (mock input)
 

@@ -12,53 +12,8 @@ import { setGameMode } from './gameMode.js';
 const STORAGE_KEY = 'angrySheepCameraDeviceId';
 const PANEL_COLLAPSED_KEY = 'angrySheepCameraPanelCollapsed';
 const CAMERA_ENABLED_KEY = 'angrySheepCameraEnabled';
-const FLOOR_PROJECTION_KEY = 'angrySheepFloorProjection';
-
 let currentStream = null;
 let cameraActive = false;
-
-function setFloorProjection(enabled) {
-  document.body.classList.toggle('floor-projected', !!enabled);
-  try {
-    localStorage.setItem(FLOOR_PROJECTION_KEY, enabled ? '1' : '0');
-  } catch (e) {
-    /* private mode */
-  }
-  const btn = document.getElementById('floorProjectionToggle');
-  if (btn) {
-    btn.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-    btn.textContent = enabled ? 'Floor Projection: On' : 'Floor Projection: Off';
-  }
-}
-
-export function enableFloorProjection() {
-  setFloorProjection(true);
-}
-
-export function disableFloorProjection() {
-  setFloorProjection(false);
-}
-
-function initFloorProjectionToggle() {
-  let enabled = false;
-  try {
-    enabled = localStorage.getItem(FLOOR_PROJECTION_KEY) === '1';
-  } catch (e) {
-    /* ignore */
-  }
-  setFloorProjection(enabled);
-
-  const btn = document.getElementById('floorProjectionToggle');
-  if (!btn) return;
-  btn.addEventListener('click', () => {
-    setFloorProjection(!document.body.classList.contains('floor-projected'));
-  });
-}
-
-if (typeof window !== 'undefined') {
-  window.enableFloorProjection = enableFloorProjection;
-  window.disableFloorProjection = disableFloorProjection;
-}
 
 /* ── UI helpers ── */
 
@@ -148,6 +103,7 @@ function stopCurrentStream() {
   const video = getVideoEl();
   if (video) {
     video.srcObject = null;
+    video.classList.remove('webcam-feed');
   }
 }
 
@@ -177,13 +133,37 @@ export async function startCamera(deviceId) {
 
   stopCurrentStream();
 
+  const videoConstraints = {
+    deviceId: { exact: deviceId },
+    facingMode: 'user',
+    width: { ideal: 2560 },
+    height: { ideal: 1440 },
+    zoom: { ideal: 1 },
+  };
+
+  let stream = null;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        deviceId: { exact: deviceId },
-        facingMode: 'user',
-      },
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: videoConstraints,
+      audio: false,
     });
+  } catch (err) {
+    console.warn('[camera] hi-res constraints failed, retrying basic:', err);
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId }, facingMode: 'user' },
+        audio: false,
+      });
+    } catch (err2) {
+      console.warn('[camera] startCamera failed:', err2);
+      cameraActive = false;
+      setGameMode('digital');
+      syncCameraToggleButton();
+      return;
+    }
+  }
+
+  try {
     currentStream = stream;
     video.classList.add('webcam-feed');
     video.autoplay = true;
@@ -217,7 +197,8 @@ export async function startCamera(deviceId) {
     syncCameraToggleButton();
     setCameraPanelCollapsed(false);
   } catch (err) {
-    console.warn('[camera] startCamera failed:', err);
+    console.warn('[camera] startCamera attach failed:', err);
+    stopCurrentStream();
     cameraActive = false;
     setGameMode('digital');
     syncCameraToggleButton();
@@ -253,7 +234,6 @@ export async function initCameraSwitcher() {
   );
 
   initCameraPanelToggle();
-  initFloorProjectionToggle();
 
   const select = getSelectEl();
   const video = getVideoEl();
@@ -273,14 +253,24 @@ export async function initCameraSwitcher() {
   video.setAttribute('playsinline', '');
   video.setAttribute('autoplay', '');
   video.setAttribute('muted', '');
-  video.classList.add('webcam-feed');
   video.muted = true;
 
   let permissionStream = null;
   try {
-    permissionStream = await navigator.mediaDevices.getUserMedia({ video: true });
-  } catch (e) {
-    console.warn('[camera] permission denied:', e);
+    permissionStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: 'user',
+        width: { ideal: 2560 },
+        height: { ideal: 1440 },
+        zoom: { ideal: 1 },
+      },
+      audio: false,
+    });
+  } catch (e0) {
+    try {
+      permissionStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    } catch (e) {
+      console.warn('[camera] permission denied:', e);
     select.innerHTML = '';
     const opt = document.createElement('option');
     opt.textContent = 'Camera access denied';
@@ -289,6 +279,7 @@ export async function initCameraSwitcher() {
     select.disabled = true;
     syncCameraToggleButton();
     return;
+    }
   }
 
   const devices = await navigator.mediaDevices.enumerateDevices();
