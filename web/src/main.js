@@ -21,6 +21,7 @@ import {
 } from './config.js';
 import * as Input from './input.js';
 import { drawPen, setPenSprite } from './pen.js';
+import { tickIdleHerd } from './idleHerd.js';
 import { drawTools, setGrassSprite, setSheepdogSprite, setBlockSprite } from './tools.js';
 import {
   updateFlock,
@@ -249,6 +250,7 @@ new p5((p) => {
     }
 
     if (phase === 'playing') {
+      tickIdleHerd(state.tools, getFlock());
       updateFlock(state);
       setEatGrassActive(isAnySheepEating());
     } else {

@@ -3,6 +3,7 @@ import { isInsidePen, isInGap, penEdgeInfo } from './pen.js';
 import { getDragId } from './input.js';
 import { playSfx } from './sound.js';
 import { isHerdActive } from './herdMode.js';
+import { isAutoHerdActive, getChosenSheepId } from './idleHerd.js';
 
 // -- Flock state --
 let flock = [];
@@ -61,6 +62,9 @@ export function updateFlock(input) {
 
   for (const sheep of flock) {
     sheep._tick = (sheep._tick || 0) + 1;
+    if (sheep._blockBounceCooldown > 0) sheep._blockBounceCooldown--;
+    // Clear last frame's dog-push marker before applyToolReactions sets a new one.
+    sheep._dogPush = null;
 
     if (sheep.captured) {
       applyPenCalmWander(sheep);
@@ -79,9 +83,10 @@ export function updateFlock(input) {
       applyNaturalWander(sheep);
     }
 
-    applySeparation(sheep);
+    applyFlocking(sheep);
     applyEdgeBounce(sheep);
     applyToolReactions(sheep, tools);
+    applyAutoHerd(sheep, tools);
     applyCrisisPenEscape(sheep, tools);
     applyPenFenceCollision(sheep);
     applyDeescalation(sheep, tools, voice, pet);
@@ -90,6 +95,10 @@ export function updateFlock(input) {
     applyPenCapture(sheep);
     move(sheep);
   }
+
+  // Group herding: any sheep the dog pushed this frame transfers a scaled
+  // copy of that push to its neighbors so the whole cluster moves together.
+  applyGroupHerdTransfer();
 
   for (const sheep of flock) {
     if (sheep.captured) applyPenSeparation(sheep);
@@ -126,7 +135,6 @@ function createSheep(stationaryGrazer = false) {
   const minR = PEN.radius + 0.06;
   const maxR = TABLE_RADIUS - SHEEP.tableMargin;
   const dist = minR + Math.random() * (maxR - minR);
-
   return makeSheep(
     0.5 + Math.cos(angle) * dist,
     0.5 + Math.sin(angle) * dist,
@@ -136,7 +144,7 @@ function createSheep(stationaryGrazer = false) {
 }
 
 function createSheepAt(x, y, stress) {
-  // Offset slightly from parent
+  // Offset slightly from parent.
   const angle = Math.random() * Math.PI * 2;
   const offset = 0.03;
   return makeSheep(
@@ -398,19 +406,54 @@ function applyCrisisWander(sheep) {
   sheep.vy += Math.sin(sheep.wanderAngle) * spd * 0.4;
 }
 
-function applySeparation(sheep) {
+function applyFlocking(sheep) {
   const sepScale =
     sheep.stationaryGrazer && !sheep.grazerUnlocked ? 0.32 : 1;
+
+  // Cohesion + alignment gated off for crisis and for un-woken stationary grazers:
+  // crisis sheep should scatter; sleeping grazers shouldn't drift toward neighbors.
+  const allowFlock =
+    sheep.stress < SHEEP.crisisThreshold &&
+    !(sheep.stationaryGrazer && !sheep.grazerUnlocked);
+
+  let cohX = 0;
+  let cohY = 0;
+  let alignVX = 0;
+  let alignVY = 0;
+  let count = 0;
+
   for (const other of flock) {
     if (other.id === sheep.id || other.captured) continue;
     const dx = sheep.x - other.x;
     const dy = sheep.y - other.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
+
     if (dist < SHEEP.flockSeparation && dist > 0.001) {
       const force = (SHEEP.separationForce / dist) * sepScale;
       sheep.vx += (dx / dist) * force;
       sheep.vy += (dy / dist) * force;
     }
+
+    if (
+      allowFlock &&
+      other.stress < SHEEP.crisisThreshold &&
+      dist < SHEEP.flockCohesionRadius
+    ) {
+      cohX += other.x;
+      cohY += other.y;
+      alignVX += other.vx;
+      alignVY += other.vy;
+      count++;
+    }
+  }
+
+  if (allowFlock && count > 0) {
+    const avgX = cohX / count;
+    const avgY = cohY / count;
+    sheep.vx += (avgX - sheep.x) * SHEEP.cohesionForce;
+    sheep.vy += (avgY - sheep.y) * SHEEP.cohesionForce;
+    sheep.vx += (alignVX / count - sheep.vx) * SHEEP.alignmentForce;
+    sheep.vy += (alignVY / count - sheep.vy) * SHEEP.alignmentForce;
   }
 }
 
@@ -489,6 +532,110 @@ function applyCrisisPenEscape(sheep, tools) {
   sheep.wanderAngle = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.15;
 }
 
+/**
+ * After all sheep have been updated, propagate each dog-push to nearby
+ * uncaptured sheep at a reduced magnitude. This makes the sheepdog scoop
+ * clusters instead of picking off one sheep at a time.
+ */
+function applyGroupHerdTransfer() {
+  const r = SHEEP.groupHerdRadius;
+  const r2 = r * r;
+  for (const source of flock) {
+    if (!source._dogPush) continue;
+    const pushX = source._dogPush.x * SHEEP.groupHerdTransfer;
+    const pushY = source._dogPush.y * SHEEP.groupHerdTransfer;
+    for (const neighbor of flock) {
+      if (neighbor === source || neighbor.captured || neighbor._dogPush) continue;
+      const dx = neighbor.x - source.x;
+      const dy = neighbor.y - source.y;
+      if (dx * dx + dy * dy > r2) continue;
+      neighbor.vx += pushX;
+      neighbor.vy += pushY;
+    }
+  }
+}
+
+/**
+ * When the sheepdog has been idle long enough (idleHerd module), gently
+ * steer uncaptured sheep toward the nearest unblocked pen gap and bleed off
+ * stress so they become capturable. The existing win check in session.js
+ * then fires the normal celebration when every sheep is inside the pen.
+ */
+function applyAutoHerd(sheep, tools) {
+  if (!isAutoHerdActive()) return;
+  if (sheep.captured) return;
+  // Only the single chosen sheep moves itself. The rest wait.
+  if (sheep.id !== getChosenSheepId()) return;
+
+  // Find the nearest unblocked gap, reusing the same probe logic as crisis escape.
+  const blockRadius = 0.06;
+  const info = penEdgeInfo(sheep.x, sheep.y);
+  let bestMid = null;
+  let bestAngDist = Infinity;
+  let bestBlocked = true;
+  for (const [gs, ge] of PEN.gaps) {
+    let mid;
+    if (gs > ge) {
+      mid = (gs + ge + 360) / 2;
+      if (mid >= 360) mid -= 360;
+    } else {
+      mid = (gs + ge) / 2;
+    }
+    let diff = mid - info.angleDeg;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    const angDist = Math.abs(diff);
+
+    const gapRad = (mid * Math.PI) / 180;
+    const gapX = PEN.cx + Math.cos(gapRad) * PEN.radius;
+    const gapY = PEN.cy + Math.sin(gapRad) * PEN.radius;
+    let blocked = false;
+    for (const tool of tools) {
+      const tdx = tool.x - gapX;
+      const tdy = tool.y - gapY;
+      if (Math.sqrt(tdx * tdx + tdy * tdy) < blockRadius) {
+        blocked = true;
+        break;
+      }
+    }
+
+    // Prefer unblocked; among same category, prefer nearest angular distance.
+    if (
+      (bestBlocked && !blocked) ||
+      (bestBlocked === blocked && angDist < bestAngDist)
+    ) {
+      bestMid = mid;
+      bestAngDist = angDist;
+      bestBlocked = blocked;
+    }
+  }
+  if (bestMid === null) return;
+
+  const gapRad = (bestMid * Math.PI) / 180;
+  // Outside the pen: steer toward the gap on the edge (the fence will funnel
+  // them through). Inside the pen: drift toward center so they settle and
+  // the capture timer can trip.
+  let targetX;
+  let targetY;
+  if (info.dist > PEN.radius) {
+    targetX = PEN.cx + Math.cos(gapRad) * PEN.radius;
+    targetY = PEN.cy + Math.sin(gapRad) * PEN.radius;
+  } else {
+    targetX = PEN.cx;
+    targetY = PEN.cy;
+  }
+  const dx = targetX - sheep.x;
+  const dy = targetY - sheep.y;
+  const d = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+  sheep.vx += (dx / d) * SHEEP.autoHerdForce;
+  sheep.vy += (dy / d) * SHEEP.autoHerdForce;
+
+  // Calm down so capture isn't blocked by the crisisThreshold * 0.9 gate.
+  if (sheep.stress > 0) {
+    sheep.stress = Math.max(0, sheep.stress - SHEEP.autoHerdStressDecay);
+  }
+}
+
 /** Free sheep mildly avoid pen area so they don't wander in accidentally. */
 function applyPenAvoidance(sheep) {
   if (sheep.captured) return;
@@ -556,7 +703,6 @@ function applyPenFenceCollision(sheep) {
 }
 
 function applyToolReactions(sheep, tools) {
-  let nearbyBlocks = 0;
   let nearGrass = false;
   let eatingGrass = false;
   let herdCalming = false;
@@ -576,11 +722,12 @@ function applyToolReactions(sheep, tools) {
     let shovelPushX = 0;
     let shovelPushY = 0;
 
-    if (tool.type === 'sheepdog' && typeof tool.rotation === 'number') {
-      const fx = Math.cos(tool.rotation);
-      const fy = Math.sin(tool.rotation);
-      const sx = -Math.sin(tool.rotation);
-      const sy = Math.cos(tool.rotation);
+    const dogRot = tool.type === 'sheepdog' ? toolRotationRad(tool) : null;
+    if (dogRot !== null) {
+      const fx = Math.cos(dogRot);
+      const fy = Math.sin(dogRot);
+      const sx = -Math.sin(dogRot);
+      const sy = Math.cos(dogRot);
 
       const fwd = dx * fx + dy * fy; // sheep distance ahead of dog
       const side = dx * sx + dy * sy; // sheep distance to left of dog
@@ -619,10 +766,34 @@ function applyToolReactions(sheep, tools) {
       ? true
       : isPointInForwardCone(tool, dogToSheepX, dogToSheepY);
 
+    // Contact: either the sheep is inside the shovel shape (when we have a
+    // rotation), or falls into the radial flee radius (rotation unavailable
+    // and sheep is in front of the dog).
     const dogActive = tool.type === 'sheepdog' && (
       inShovelZone
-      || (typeof tool.rotation !== 'number' && dist < SHEEP.dogFleeRadius && dist > 0.001 && inFrontOfDog)
+      || (dogRot === null && dist < SHEEP.dogFleeRadius && dist > 0.001 && inFrontOfDog)
     );
+
+    // Long-range herding cone: sheep in front of the dog drift away before the
+    // shovel touches them. Only applies when contact hasn't already triggered.
+    let inHerdCone = false;
+    if (
+      tool.type === 'sheepdog'
+      && !dogActive
+      && dist > 0.001
+      && dist < SHEEP.dogHerdRadius
+    ) {
+      if (dogRot !== null) {
+        const fx = Math.cos(dogRot);
+        const fy = Math.sin(dogRot);
+        // Dot of normalized (dog→sheep) with dog's forward vector.
+        const dot = ((dx / dist) * fx) + ((dy / dist) * fy);
+        if (dot >= SHEEP.dogHerdConeDotMin) inHerdCone = true;
+      } else {
+        // No rotation anywhere on the tool: radial influence.
+        inHerdCone = true;
+      }
+    }
 
     if (dogActive) {
       if (isHerdActive()) {
@@ -635,21 +806,35 @@ function applyToolReactions(sheep, tools) {
           sheep.dogPushCount = 0;
         }
       } else {
+        let pushX;
+        let pushY;
         if (inShovelZone) {
           // Shovel push — constant force, no distance falloff (contact-based)
-          sheep.vx += shovelPushX * SHEEP.dogFleeForce * 1.5;
-          sheep.vy += shovelPushY * SHEEP.dogFleeForce * 1.5;
+          pushX = shovelPushX * SHEEP.dogFleeForce * 1.5;
+          pushY = shovelPushY * SHEEP.dogFleeForce * 1.5;
         } else {
           // Digital-mode radial push
           const force = SHEEP.dogFleeForce * (1 - dist / SHEEP.dogFleeRadius);
-          sheep.vx += (dx / dist) * force;
-          sheep.vy += (dy / dist) * force;
+          pushX = (dx / dist) * force;
+          pushY = (dy / dist) * force;
         }
+        sheep.vx += pushX;
+        sheep.vy += pushY;
+        // Record for the group-herd transfer pass in updateFlock.
+        sheep._dogPush = { x: pushX, y: pushY, tick: sheep._tick };
         sheep.stress = Math.min(
           sheep.stress + SHEEP.stressPerPush * 0.02,
           SHEEP.crisisThreshold + 0.5,
         );
       }
+    } else if (inHerdCone && !isHerdActive() && !inCrisis) {
+      // Far-range herding: push away from the dog with distance falloff.
+      // No stress, no split-counter, no _dogPush broadcast — the cone already
+      // reaches every sheep it needs to.
+      const falloff = 1 - dist / SHEEP.dogHerdRadius;
+      const force = SHEEP.dogHerdForce * falloff;
+      sheep.vx += (dx / dist) * force;
+      sheep.vy += (dy / dist) * force;
     }
     // ── end sheepdog ────────────────────────────────────────────────────
 
@@ -677,12 +862,7 @@ function applyToolReactions(sheep, tools) {
     }
 
     if (tool.type === 'block' && dist < SHEEP.blockDetectRadius && dist > 0.001) {
-      nearbyBlocks++;
-      const force = SHEEP.blockRepelForce / Math.max(dist, 0.01);
-      sheep.vx += (dx / dist) * force;
-      sheep.vy += (dy / dist) * force;
-
-      // Actively dragged block angers the sheep
+      // Actively dragged block angers the sheep (independent of the bounce itself)
       if (tool.id === getDragId()) {
         sheep.stress = Math.min(
           sheep.stress + SHEEP.blockDragStressRate,
@@ -690,20 +870,34 @@ function applyToolReactions(sheep, tools) {
         );
       }
 
-      const awayAngle = Math.atan2(dy, dx);
-      let wanderDiff = sheep.wanderAngle - awayAngle;
-      while (wanderDiff > Math.PI) wanderDiff -= Math.PI * 2;
-      while (wanderDiff < -Math.PI) wanderDiff += Math.PI * 2;
-      if (Math.abs(wanderDiff) > Math.PI / 2) {
-        sheep.wanderAngle = awayAngle + (wanderDiff > 0 ? Math.PI / 2 : -Math.PI / 2);
+      // Bounce: reflect velocity off block with a randomized deflection in
+      // [blockBounceMinDeg, blockBounceMaxDeg] from the incoming path. Only
+      // triggers when the sheep is actually moving toward the block, and
+      // respects a short cooldown so a single contact doesn't re-fire every frame.
+      if ((sheep._blockBounceCooldown | 0) === 0) {
+        const nx = dx / dist; // block→sheep (outward normal)
+        const ny = dy / dist;
+        const speed = Math.sqrt(sheep.vx * sheep.vx + sheep.vy * sheep.vy);
+        const approach = -(sheep.vx * nx + sheep.vy * ny); // >0 if moving toward block
+        if (speed > SHEEP.blockBounceMinSpeed && approach > 0) {
+          const incomingAngle = Math.atan2(sheep.vy, sheep.vx);
+          const minRad = (SHEEP.blockBounceMinDeg * Math.PI) / 180;
+          const maxRad = (SHEEP.blockBounceMaxDeg * Math.PI) / 180;
+          const theta = minRad + Math.random() * (maxRad - minRad);
+          const sign = Math.random() < 0.5 ? -1 : 1;
+          let outAngle = incomingAngle + sign * theta;
+          // If the deflected direction still points into the block, flip sign.
+          if (Math.cos(outAngle) * nx + Math.sin(outAngle) * ny < 0) {
+            outAngle = incomingAngle - sign * theta;
+          }
+          const outSpeed = speed * SHEEP.blockBounceElasticity;
+          sheep.vx = Math.cos(outAngle) * outSpeed;
+          sheep.vy = Math.sin(outAngle) * outSpeed;
+          sheep.wanderAngle = outAngle;
+          sheep._blockBounceCooldown = SHEEP.blockBounceCooldownFrames;
+        }
       }
     }
-  }
-
-  if (nearbyBlocks >= 2) {
-    const damping = Math.max(0.3, 1 - nearbyBlocks * 0.25);
-    sheep.vx *= damping;
-    sheep.vy *= damping;
   }
 
   sheep._isEating = eatingGrass;
@@ -848,12 +1042,25 @@ function applyStressTracking(sheep, tools) {
   }
 }
 
+/**
+ * Tools in physical mode carry `rotation` (radians); digital-mode tools carry
+ * `angle_deg` (degrees). Read either so both modes share the same herding,
+ * shovel, and forward-cone behavior.
+ * @returns {number | null}
+ */
+function toolRotationRad(tool) {
+  if (typeof tool.rotation === 'number') return tool.rotation;
+  if (typeof tool.angle_deg === 'number') return (tool.angle_deg * Math.PI) / 180;
+  return null;
+}
+
 function isPointInForwardCone(tool, dx, dy) {
-  if (typeof tool.rotation !== 'number') return true;
+  const rot = toolRotationRad(tool);
+  if (rot === null) return true;
   const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist <= 0.0001) return true;
-  const forwardX = Math.cos(tool.rotation);
-  const forwardY = Math.sin(tool.rotation);
+  const forwardX = Math.cos(rot);
+  const forwardY = Math.sin(rot);
   const dot = ((dx / dist) * forwardX) + ((dy / dist) * forwardY);
   return dot > PHYSICAL_MODE.sheepdogForwardConeDotMin;
 }

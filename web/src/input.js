@@ -242,7 +242,11 @@ function onMouseWheel(event) {
   const id = hitTest(state.tools, n.x, n.y);
   if (id !== null) {
     const tool = state.tools.find((t) => t.id === id);
-    if (tool) {
+    // Sheepdogs auto-aim toward the nearest sheep (tools.js), which overwrites
+    // any manual angle every frame. Skip the write so the interaction is an
+    // explicit no-op instead of silently broken. Still preventDefault so the
+    // page doesn't scroll when the user spins the wheel over a dog.
+    if (tool && tool.type !== 'sheepdog') {
       const dir = event.delta > 0 ? 1 : -1;
       tool.angle_deg = (tool.angle_deg + dir * TOOL_ROTATE_STEP) % 360;
     }
@@ -262,7 +266,8 @@ function onKeyDown(event) {
   if (event.key === 'r' || event.key === 'R') {
     if (hoveredId !== null) {
       const tool = state.tools.find((t) => t.id === hoveredId);
-      if (tool) {
+      // Same rationale as onMouseWheel: sheepdog angle is owned by auto-aim.
+      if (tool && tool.type !== 'sheepdog') {
         tool.angle_deg = (tool.angle_deg + TOOL_ROTATE_STEP) % 360;
       }
     }

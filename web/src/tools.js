@@ -105,6 +105,12 @@ export function drawTools(p, tools, canvasSize, hoveredId, flock) {
       currentRad = lerpAngleRad(currentRad, targetRad, steerAlpha);
       sheepdogAimRadById.set(tool.id, currentRad);
       rotDeg = (currentRad * 180) / Math.PI;
+      // Keep the physics heading in sync with the visual: sheep.js reads
+      // tool.angle_deg to orient the shovel contact zone and the long-range
+      // herding cone. Without this write-back, digital-mode physics would
+      // face whatever random angle spawn/scroll-wheel set, not the direction
+      // the dog visibly points.
+      tool.angle_deg = rotDeg;
     }
 
     p.rotate(p.radians(rotDeg));
@@ -123,16 +129,16 @@ export function drawTools(p, tools, canvasSize, hoveredId, flock) {
       drawBlock(p, canvasSize);
     } else if (tool.type === 'sheepdog') {
       drawSheepdog(p, canvasSize);
-      if (hasPhysicalRotation) {
-        drawShovelOutline(p, canvasSize);
-      }
+      drawShovelOutline(p, canvasSize);
     } else if (tool.type === 'grass') {
       p.noStroke();
       p.fill(color);
       drawGrass(p, canvasSize);
     }
 
-    if (hasPhysicalRotation) {
+    // Arrow: in physical mode it's the marker-tracking debug cue on any tool;
+    // in digital mode it shows the sheepdog's aim direction.
+    if (hasPhysicalRotation || tool.type === 'sheepdog') {
       const arrowLen = PHYSICAL_MODE.debugArrowLength * canvasSize;
       p.stroke(255, 245, 160, 220);
       p.strokeWeight(3);

@@ -184,12 +184,37 @@ export const SHEEP = {
   dogFleeForce: 0.004,
   dogShovelHalfFlat: 0.09,  // half-width of flat shovel face (normalized)
   dogShovelArmLen: 0.06,    // length of each 45° arm at the ends of the flat
+  // Long-range herding — gentle directional push in a cone in front of the dog,
+  // so sheep start moving before the shovel ever touches them. Keeps the group
+  // together instead of scattering one sheep at a time.
+  dogHerdRadius: 0.24,          // max range of the far-cone influence
+  dogHerdForce: 0.0018,         // peak force at closest edge of the cone (falls to 0 at dogHerdRadius)
+  dogHerdConeDotMin: 0.2,       // >0 means forward-hemisphere cone (smaller = wider cone)
   grassAttractRadius: 0.12, // sheep attracted when grass is within this range
   grassAttractForce: 0.002,
   grazeFillRate: 0.008,     // fullness gained per frame while near grass (calm sheep fill fast)
   grazeDigestRate: 0.001,   // fullness lost per frame while away from grass
   blockDetectRadius: 0.05,  // sheep avoid blocks within this range
-  blockRepelForce: 0.003,
+  blockRepelForce: 0.003,   // (legacy; unused after bounce rewrite)
+  // Block bounce — sheep deflect off blocks with a randomized angle instead of steering around.
+  blockBounceMinDeg: 90,            // min deflection from incoming path
+  blockBounceMaxDeg: 120,           // max deflection from incoming path
+  blockBounceElasticity: 0.9,       // speed retained after bounce
+  blockBounceMinSpeed: 0.0005,      // below this incoming speed, skip the bounce (avoids jitter on near-stationary sheep)
+  blockBounceCooldownFrames: 8,     // frames a sheep is immune to re-bouncing the same block
+  // Group herding — when the sheepdog pushes one sheep, nearby sheep receive
+  // a scaled copy of the same push so clusters move together rather than
+  // getting picked off one at a time.
+  groupHerdRadius: 0.16,
+  groupHerdTransfer: 0.55,
+  // Flocking — pure proximity-based boids. Clusters form and dissolve
+  // organically based on who's near whom; no fixed group membership.
+  flockCohesionRadius: 0.13,
+  cohesionForce: 0.0022,
+  alignmentForce: 0.03,
+  // Auto-herd — after ~60s of sheepdog inactivity, sheep walk themselves into the pen.
+  autoHerdForce: 0.0012,
+  autoHerdStressDecay: 0.005,
   // Pen capture
   captureSettleTime: 60,    // frames a sheep must stay inside pen to be captured
 
@@ -356,4 +381,6 @@ export const SESSION = {
   introDuration: 60 * 3,    // frames for intro animation (~3s)
   outroDuration: 60 * 5,    // frames for win screen (~5s)
   resetPause: 60 * 2,       // frames to pause before auto-reset (~2s)
+  autoHerdIdleFrames: 60 * 60,  // ~60s of sheepdog inactivity → auto-herd engages
+  sheepdogMoveEpsilon: 0.002,   // normalized distance below which a sheepdog counts as "not moving"
 };

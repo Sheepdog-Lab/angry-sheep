@@ -1,6 +1,7 @@
 import { SESSION, TABLE_RADIUS, SHEEP as SHEEP_CFG } from './config.js';
 import { spawnFlock, getFlock } from './sheep.js';
 import { playSfx, muteTrackTemp } from './sound.js';
+import { resetIdleHerd } from './idleHerd.js';
 
 // States: 'intro' → 'playing' → 'win' → 'reset' → 'intro'
 let phase = 'intro';
@@ -50,6 +51,7 @@ export function getFrameCounter() {
 export function startSession() {
   phase = 'intro';
   frameCounter = 0;
+  resetIdleHerd();
   spawnFlock();
 }
 
@@ -90,6 +92,7 @@ export function update() {
       phase = 'intro';
       frameCounter = 0;
       muteTrackTemp('kids', false);
+      resetIdleHerd();
       spawnFlock();
     }
   }
