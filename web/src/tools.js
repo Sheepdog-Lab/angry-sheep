@@ -12,6 +12,8 @@ let grassSpriteTransparent = null;
 let grassProcessedKey = null;
 /** @type {import('p5').Image | null} */
 let herdingIndicatorImg = null;
+/** @type {import('p5').Image | null} */
+let combSprite = null;
 
 // Store per-tool animated aiming angle (radians) so rotation is smooth.
 /** @type {Map<number, number>} */
@@ -51,6 +53,14 @@ export function setGrassSprite(img) {
  */
 export function setHerdingIndicatorSprite(img) {
   herdingIndicatorImg = img;
+}
+
+/**
+ * Wooden comb (same asset as the sheep “petting” calming cue in sheep.js).
+ * @param {import('p5').Image | null} img
+ */
+export function setCombSprite(img) {
+  combSprite = img;
 }
 
 /**
@@ -144,6 +154,10 @@ export function drawTools(p, tools, canvasSize, hoveredId, flock) {
       p.noStroke();
       p.fill(color);
       drawGrass(p, canvasSize);
+    } else if (tool.type === 'comb') {
+      p.noStroke();
+      p.fill(color);
+      drawComb(p, canvasSize);
     }
 
     // Arrow: in physical mode it's the marker-tracking debug cue on any tool;
@@ -168,6 +182,7 @@ export function drawPhysicalTools(p, tools, canvasSize) {
     let color = '#ffffff';
     if (tool.type === 'grass') color = '#4caf50';
     if (tool.type === 'block') color = '#9aa0a6';
+    if (tool.type === 'comb') color = String(TOOL_COLORS.comb);
 
     p.push();
     p.translate(px, py);
@@ -488,6 +503,31 @@ function drawGrass(p, s) {
   p.line(0, 0, 0, -bladeH);
   p.line(0, 0, -r * 0.6, -bladeH * 0.8);
   p.line(0, 0, r * 0.6, -bladeH * 0.8);
+}
+
+function drawComb(p, s) {
+  const r = TOOL_SIZES.comb * s;
+  if (combSprite && combSprite.width > 0) {
+    p.push();
+    p.imageMode(p.CENTER);
+    const iw = combSprite.width;
+    const ih = combSprite.height;
+    const maxDim = r * 3.0;
+    const scale = maxDim / Math.max(iw, ih);
+    const w = iw * scale;
+    const h = ih * scale;
+    p.tint(255, 255, 255, 255);
+    p.image(combSprite, 0, 0, w, h);
+    p.noTint();
+    p.pop();
+    return;
+  }
+  p.fill(TOOL_COLORS.comb);
+  p.ellipse(0, 0, r * 2, r * 0.5);
+  p.textAlign(p.CENTER, p.CENTER);
+  p.textSize(r * 1.4);
+  p.fill(0, 0, 0, 160);
+  p.text('comb', 0, 0);
 }
 
 /**

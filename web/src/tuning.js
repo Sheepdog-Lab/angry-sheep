@@ -27,6 +27,7 @@ const CATEGORIES = [
     color: '#4caf50',
     params: [
       { key: '_grassSize',     label: 'Grass size',     min: 0.008,  max: 0.08,  step: 0.002,  target: 'toolSize', toolType: 'grass' },
+      { key: '_combSize',      label: 'Comb size',      min: 0.01,   max: 0.06,  step: 0.002,  target: 'toolSize', toolType: 'comb' },
     ],
   },
   {
@@ -34,6 +35,7 @@ const CATEGORIES = [
     color: '#c4a35a',
     params: [
       { key: '_sheepdogSize',  label: 'Dog size',       min: 0.015,  max: 0.09,  step: 0.002,  target: 'toolSize', toolType: 'sheepdog' },
+      { key: '_combCount',     label: 'Comb count',     min: 0,      max: 3,     step: 1,      tool: 'comb' },
       { key: '_blockCount',    label: 'Block count',    min: 0,      max: 10,    step: 1,      tool: 'block' },
       { key: '_blockSize',     label: 'Block size',     min: 0.03,   max: 0.56,  step: 0.005,  target: 'toolSize', toolType: 'block' },
       { key: 'dogShovelHalfFlat', label: 'Shovel width',       min: 0.02, max: 0.20, step: 0.005 },

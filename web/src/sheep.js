@@ -330,6 +330,10 @@ function tryWakeGrazer(sheep, tools, voice, pet) {
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < 0.001) continue;
 
+    if (tool.type === 'comb' && dist < SHEEP.petRadius * 1.15) {
+      sheep.grazerUnlocked = true;
+      return;
+    }
     if (tool.type === 'sheepdog' && dist < SHEEP.dogFleeRadius) {
       sheep.grazerUnlocked = true;
       return;
@@ -944,7 +948,7 @@ function applyDeescalation(sheep, tools, voice, pet) {
     }
   }
 
-  // Petting: mouse click/hold near sheep
+  // Petting: (1) digital pointer, or (2) physical / drag comb overlapping the sheep
   sheep.beingPetted = false;
   if (pet && pet.active) {
     const dx = sheep.x - pet.x;
@@ -953,6 +957,19 @@ function applyDeescalation(sheep, tools, voice, pet) {
     if (dist < SHEEP.petRadius) {
       sheep.stress = Math.max(0, sheep.stress - SHEEP.petCalmRate);
       sheep.beingPetted = true;
+    }
+  }
+  if (!sheep.beingPetted) {
+    for (const tool of tools) {
+      if (tool.type !== 'comb') continue;
+      const dx = sheep.x - tool.x;
+      const dy = sheep.y - tool.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < SHEEP.petRadius) {
+        sheep.stress = Math.max(0, sheep.stress - SHEEP.petCalmRate);
+        sheep.beingPetted = true;
+        break;
+      }
     }
   }
 
@@ -1700,6 +1717,8 @@ function drawCalmingCuePng(p, r, kind, pulse) {
           ? calmingVoiceImg
           : null;
   const isGrass = kind === 'grass';
+  const isPet = kind === 'pet';
+  const IF = SHEEP.interactionFeedback;
 
   if (!isCalmingCueImageReady(img)) {
     if (
@@ -1710,21 +1729,33 @@ function drawCalmingCuePng(p, r, kind, pulse) {
       calmingCueMissingWarned = true;
       console.warn(
         '[calming] Feeding/petting PNG not ready (failed load or 1×1 placeholder). Check network tab for',
-        isGrass ? 'feeding' : 'petting',
+        isGrass ? 'feeding' : 'petting (comb)',
         'asset.',
       );
     }
     return false;
   }
 
-  const targetH = r * 1.72;
+  const targetH =
+    r * (isPet ? IF.pettingCombTargetHMul : 1.72);
   const sc = targetH / img.height;
   const w = img.width * sc;
   const h = img.height * sc;
   const alpha = Math.round(255 * (0.88 + 0.1 * pulse));
   p.imageMode(p.CENTER);
   p.tint(255, 255, 255, alpha);
-  p.image(img, 0, -r * 0.05, w, h);
+  if (isPet) {
+    p.push();
+    p.translate(
+      (IF.pettingCombOffsetXMul ?? 0) * r,
+      (IF.pettingCombOffsetYMul ?? 0) * r,
+    );
+    p.rotate(IF.pettingCombRotRad ?? 0);
+    p.image(img, 0, 0, w, h);
+    p.pop();
+  } else {
+    p.image(img, 0, -r * 0.05, w, h);
+  }
   p.noTint();
   return true;
 }

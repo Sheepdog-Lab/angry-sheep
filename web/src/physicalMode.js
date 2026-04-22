@@ -1,9 +1,10 @@
 import { PHYSICAL_MODE, TOOL_COLORS } from './config.js';
 import { applyPhysicalMarkerFlip } from './markerCalibration.js';
 
-/** ArUco DICT_4X4_50 ids → tools: dogs 0–2, grass 3–4, 5–6 unused, blocks 7–20 */
+/** ArUco DICT_4X4_50 ids → tools: dogs 0–2, grass 3–4, comb 5–6, blocks 7–20 */
 const SHEEPDOG_IDS = new Set([0, 1, 2]);
 const GRASS_IDS = new Set([3, 4]);
+const COMB_IDS = new Set([5, 6]);
 const rotationByMarkerId = new Map();
 
 function lerpAngleRad(a, b, t) {
@@ -21,6 +22,7 @@ function applyFlipToRotation(angle, flipX, flipY) {
 export function getObjectTypeFromMarker(id) {
   if (SHEEPDOG_IDS.has(id)) return 'sheepdog';
   if (GRASS_IDS.has(id)) return 'grass';
+  if (COMB_IDS.has(id)) return 'comb';
   if (id >= 7 && id <= 20) return 'block';
   return null;
 }
@@ -74,6 +76,7 @@ export function drawPhysicalToolVisuals(p, tools, canvasSize) {
     const color =
       tool.type === 'sheepdog' ? '#ffffff' :
       tool.type === 'grass' ? TOOL_COLORS.grass :
+      tool.type === 'comb' ? TOOL_COLORS.comb :
       '#b0b0b0';
     p.push();
     p.fill(color);

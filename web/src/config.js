@@ -32,8 +32,9 @@ export const VICTORY_S3_URL = `/victory-s3.png?v=${_v}`;
 /** Shepherd + wooden sign; bottom of play area only (not mixed with sheep cluster). */
 export const VICTORY_BANNER_URL = `/victory-banner.png?v=${_v}`;
 /**
- * Calming cue PNGs (feeding, petting, voice). Imported from `web/src/assets/` so Vite emits
+ * Calming cue PNGs (feeding, petting comb, voice). Imported from `web/src/assets/` so Vite emits
  * stable hashed URLs in dev/prod (works with any `base` path; avoids `/` root 404s).
+ * Petting uses the wooden comb asset; feeding uses grass; voice uses a speech cue.
  * @see setCalmingCueSprites (sheep.js), setCrisisHintCueSprites (session.js)
  */
 export const CALMING_FEEDING_URL = calmingFeedingAsset;
@@ -134,18 +135,21 @@ export const AMBIENT_GRASS = {
 };
 
 // -- Tool types --
-export const TOOL_TYPES = ['block', 'sheepdog', 'grass'];
+export const TOOL_TYPES = ['block', 'sheepdog', 'grass', 'comb'];
 
 export const TOOL_COLORS = {
   block: '#c4a35a',
   sheepdog: '#e8923e',
   grass: '#4caf50',
+  /** Calming comb — same art as the sheep overlay, drawn on the table in play */
+  comb: '#c4a882',
 };
 
 export const TOOL_SIZES = {
   block: { w: 0.12, h: 0.025 },
   sheepdog: 0.03,
   grass: 0.02,
+  comb: 0.022,
 };
 
 export const TOOL_HIT_RADIUS = 0.035;
@@ -167,6 +171,7 @@ export const INITIAL_TOOLS = [
   { type: 'sheepdog', x: 0.30, y: 0.55, angle_deg: 0 },
   { type: 'grass',    x: 0.70, y: 0.45, angle_deg: 0 },
   { type: 'grass',    x: 0.40, y: 0.35, angle_deg: 0 },
+  { type: 'comb',     x: 0.50, y: 0.82, angle_deg: 22 },
 ];
 
 // -- Sheep --
@@ -350,6 +355,17 @@ export const SHEEP = {
     feedEffectOpacity: 0.96,
     petGlowOpacity: 0.55,
     feedGlowOpacity: 0.48,
+    /**
+     * Petting comb art (`web/src/assets/calming-petting.png`): the real comb is a table
+     * object (`type: 'comb'` in tools, ArUco ids 5–6); this sprite mirrors it above the
+     * sheep while the comb calms (same cue stack as grass + voice).
+     */
+    pettingCombTargetHMul: 1.8,
+    /** Extra rotation (radians) so the comb matches the art’s diagonal on screen */
+    pettingCombRotRad: 0.2,
+    /** Position offset (in × body radius) before rotation */
+    pettingCombOffsetXMul: 0.035,
+    pettingCombOffsetYMul: -0.1,
   },
   /**
    * Anger / agitation VFX (comic aura, marks, zig-zags). Intensity ramps with stress

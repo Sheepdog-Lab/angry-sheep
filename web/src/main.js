@@ -31,6 +31,7 @@ import {
   setSheepdogSprite,
   setHerdingIndicatorSprite,
   setBlockSprite,
+  setCombSprite,
 } from './tools.js';
 import {
   updateFlock,
@@ -198,6 +199,7 @@ new p5((p) => {
     setSheepdogSprite(sheepdogImg);
     setHerdingIndicatorSprite(herdingIndicatorImg);
     setGrassSprite(grassImg);
+    setCombSprite(calmingPettingImg);
     setBlockSprite(blockImg);
     setPenSprite(penImg);
     stripVictoryShepherdBackdrop(victoryBannerImg);

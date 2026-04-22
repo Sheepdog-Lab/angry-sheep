@@ -135,7 +135,7 @@ export function drawHUD(p, size) {
   p.textSize(11);
   p.textAlign(p.LEFT, p.BOTTOM);
   p.text(
-    'Drag tools (mouse or touch)  |  Scroll: rotate  |  Hold V: speak  |  Hold click / finger near sheep: pet',
+    'Drag tools (mouse or touch)  |  Scroll: rotate  |  Hold V: speak  |  Calm: place the comb on a sheep, or hold click / finger near a sheep (no tool)',
     margin,
     s - margin,
   );
