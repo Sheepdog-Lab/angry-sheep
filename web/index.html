@@ -2,13 +2,22 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Angry Sheep</title>
   <style>
+    html {
+      height: 100%;
+      height: -webkit-fill-available;
+    }
     html, body {
       margin: 0;
       padding: 0;
       overflow: hidden;
-      height: 100vh;
+      min-height: 100vh;
+      min-height: 100dvh;
+      min-height: -webkit-fill-available;
       width: 100vw;
       background: #050805;
     }
@@ -26,6 +35,7 @@
       display: block;
       width: 100%;
       height: 100%;
+      touch-action: none;
     }
     .fullscreen-app {
       position: fixed;
@@ -61,15 +71,20 @@
     }
     .fullscreen-launch {
       position: fixed;
-      right: 24px;
-      bottom: 24px;
-      z-index: 10001;
+      right: max(24px, env(safe-area-inset-right, 0px));
+      bottom: max(24px, env(safe-area-inset-bottom, 0px));
+      z-index: 10050;
+      pointer-events: auto;
       width: 148px;
       height: 148px;
+      min-width: 44px;
+      min-height: 44px;
       padding: 16px;
       font-size: 1.4rem;
       line-height: 1.05;
       text-transform: uppercase;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
     .fullscreen-launch:hover,
     .fullscreen-exit:hover,
@@ -89,6 +104,8 @@
     .recalibrate-button:focus-visible,
     .table-projection-button:focus-visible,
     .camera-panel-toggle:focus-visible,
+    .camera-panel-disclose:focus-visible,
+    .camera-panel-reveal:focus-visible,
     #cameraSelect:focus-visible {
       outline: 3px solid #8ab4ff;
       outline-offset: 3px;
@@ -103,6 +120,8 @@
       background: #2a2a2a;
       color: #e8e8e8;
       cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
     .camera-on-off-toggle:hover {
       background: #3a3a3a;
@@ -116,14 +135,17 @@
     .fullscreen-exit {
       display: none;
       position: fixed;
-      right: 24px;
-      bottom: 24px;
-      z-index: 10001;
+      right: max(24px, env(safe-area-inset-right, 0px));
+      bottom: max(24px, env(safe-area-inset-bottom, 0px));
+      z-index: 10050;
+      pointer-events: auto;
       min-width: 140px;
       min-height: 64px;
       padding: 14px 18px;
       font-size: 1rem;
       text-transform: uppercase;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
     .recalibrate-button {
       display: none;
@@ -138,7 +160,8 @@
       position: fixed;
       right: 24px;
       bottom: 188px;
-      z-index: 10001;
+      z-index: 10050;
+      pointer-events: auto;
     }
     .recalibrate-button--fullscreen {
       position: absolute;
@@ -163,7 +186,8 @@
       position: fixed;
       top: 8px;
       left: 8px;
-      z-index: 10000;
+      z-index: 10050;
+      pointer-events: auto;
       background: rgba(0, 0, 0, 0.82);
       color: #e8e8e8;
       padding: 10px 12px;
@@ -183,6 +207,7 @@
       align-items: center;
       gap: 8px;
       margin-bottom: 0;
+      width: 100%;
     }
     .camera-panel:not(.camera-panel--collapsed) .camera-panel-header {
       margin-bottom: 8px;
@@ -200,6 +225,8 @@
       background: #2a2a2a;
       color: #e8e8e8;
       cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
     .camera-panel-toggle:hover {
       background: #3a3a3a;
@@ -269,6 +296,54 @@
       box-shadow:
         0 0 0 4px rgba(34, 197, 94, 0.45),
         0 12px 32px rgba(21, 128, 61, 0.45);
+    }
+    body.camera-panel-hidden #cameraPanel {
+      display: none !important;
+    }
+    .camera-panel-reveal {
+      position: fixed;
+      top: max(8px, env(safe-area-inset-top, 0px));
+      left: max(8px, env(safe-area-inset-left, 0px));
+      z-index: 10050;
+      pointer-events: auto;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid #555;
+      background: rgba(0, 0, 0, 0.82);
+      color: #e8e8e8;
+      font: 12px system-ui, -apple-system, sans-serif;
+      font-weight: 600;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+    }
+    .camera-panel-reveal:hover {
+      background: rgba(30, 30, 30, 0.92);
+      border-color: #666;
+    }
+    .camera-panel-disclose {
+      flex-shrink: 0;
+      margin-left: auto;
+      padding: 8px 10px;
+      min-height: 44px;
+      min-width: 44px;
+      box-sizing: border-box;
+      font: inherit;
+      line-height: 1.2;
+      border-radius: 6px;
+      border: 1px solid #555;
+      background: #1e1e1e;
+      color: #bbb;
+      cursor: pointer;
+      font-size: 11px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .camera-panel-disclose:hover {
+      background: #2a2a2a;
+      border-color: #666;
+      color: #e8e8e8;
     }
     .calibration-key {
       position: fixed;
@@ -349,11 +424,31 @@
       Recalibrate
     </button>
   </div>
+  <button
+    type="button"
+    id="cameraPanelReveal"
+    class="camera-panel-reveal"
+    hidden
+    aria-controls="cameraPanel"
+    title="Show camera window"
+  >
+    Camera
+  </button>
   <div class="camera-panel" id="cameraPanel" aria-label="Camera preview">
     <div class="camera-panel-header">
       <button type="button" id="cameraToggle" class="camera-on-off-toggle" aria-pressed="false" title="Turn camera on or off">Camera Off</button>
-      <button type="button" id="cameraPanelToggle" class="camera-panel-toggle" aria-expanded="true" aria-controls="camera-panel-body" title="Hide camera controls">
+      <button type="button" id="cameraPanelToggle" class="camera-panel-toggle" aria-expanded="true" aria-controls="camera-panel-body" title="Hide device list and preview">
         Hide
+      </button>
+      <button
+        type="button"
+        id="cameraPanelDisclose"
+        class="camera-panel-disclose"
+        aria-expanded="true"
+        aria-controls="cameraPanel"
+        title="Hide camera window (use Camera chip to show again)"
+      >
+        Hide window
       </button>
     </div>
     <div id="camera-panel-body" class="camera-panel-body">

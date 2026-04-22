@@ -1,12 +1,17 @@
 import calmingFeedingAsset from './assets/calming-feeding.png';
 import calmingPettingAsset from './assets/calming-petting.png';
+import calmingVoiceAsset from './assets/calming-voice.png';
 
 // -- Canvas --
 export const CANVAS_BG_COLOR = '#2d5a1b';
 /** Served from `web/public/` (Vite → URL root). */
 export const TERRAIN_TEXTURE_URL = '/terrain.png';
 export const SHEEP_TEXTURE_URL = '/sheep.png';
+/** Anime-style anger veins near stressed sheep (`web/public/anger-indicator.png`). */
+export const ANGER_INDICATOR_URL = '/anger-indicator.png';
 export const SHEEPDOG_TEXTURE_URL = '/sheepdog.png';
+/** Semi-transparent wedge in front of sheepdogs (`web/public/herding-indicator.png`). */
+export const HERDING_INDICATOR_URL = '/herding-indicator.png';
 export const BLOCKS_TEXTURE_URL = '/blocks.png';
 export const GRASS_TEXTURE_URL = '/grass.png';
 /** Decorative grass clumps on terrain (`web/public/terrain-grass-clump.png`). */
@@ -27,12 +32,14 @@ export const VICTORY_S3_URL = `/victory-s3.png?v=${_v}`;
 /** Shepherd + wooden sign; bottom of play area only (not mixed with sheep cluster). */
 export const VICTORY_BANNER_URL = `/victory-banner.png?v=${_v}`;
 /**
- * Calming cue PNGs (feeding + petting). Imported from `web/src/assets/` so Vite emits
+ * Calming cue PNGs (feeding, petting, voice). Imported from `web/src/assets/` so Vite emits
  * stable hashed URLs in dev/prod (works with any `base` path; avoids `/` root 404s).
  * @see setCalmingCueSprites (sheep.js), setCrisisHintCueSprites (session.js)
  */
 export const CALMING_FEEDING_URL = calmingFeedingAsset;
 export const CALMING_PETTING_URL = calmingPettingAsset;
+/** Positive voice / “say something nice” cue above sheep when V + encouraging. */
+export const CALMING_VOICE_URL = calmingVoiceAsset;
 export const MASK_COLOR = '#000000'; // black outside the table circle
 
 // -- Pen / Corral (circular with gaps) --
@@ -343,6 +350,58 @@ export const SHEEP = {
     feedEffectOpacity: 0.96,
     petGlowOpacity: 0.55,
     feedGlowOpacity: 0.48,
+  },
+  /**
+   * Anger / agitation VFX (comic aura, marks, zig-zags). Intensity ramps with stress
+   * from stressRampStart → stressFullAt (typically crisis), then fades as sheep calm.
+   */
+  angerVfx: {
+    /** Stress below this: VFX off. Above: ramps in until stressFullAt. */
+    stressRampStart: 0.36,
+    /** Stress at full VFX strength (use `crisisThreshold` for “full anger” only). */
+    stressFullAt: 1.0,
+    /** >1 = stays dim longer; <1 = snaps brighter near full stress */
+    fadeCurvePower: 1.12,
+    /** Overall size of the aura (multiples of body radius `r`) */
+    auraRadiusMulMin: 1.42,
+    auraRadiusMulMax: 2.28,
+    auraStrokePxMin: 0.9,
+    auraStrokePxMax: 2.1,
+    /** Inner ring stroke alpha vs outer (0–1); outer alpha scales by (1 - mix * this) */
+    ringOutwardAlphaFalloff: 0.78,
+    /** Thinner strokes on outer rings: stroke *= (1 - mix * this) */
+    ringOutwardStrokeThinning: 0.45,
+    /** Phase offset between concentric rings */
+    auraPulsePhaseSpread: 0.62,
+    /** Comic tick marks around the sheep */
+    markCount: 8,
+    markLengthMul: 0.2,
+    markOrbitRMul: 1.06,
+    /** Zig-zag frustration lines */
+    zigZagCount: 5,
+    zigZagRadiusMul: 1.36,
+    zigZagAmpMul: 0.085,
+    /** Stroke thickness for zig-zag “curly” lines (px + this × intensity) */
+    zigZagStrokePx: 3.05,
+    zigZagStrokeIntensityAdd: 0.65,
+    /** Pulse / flicker / outward breathe (higher = faster) */
+    pulseSpeed: 0.118,
+    flickerSpeed: 0.4,
+    outwardPulseMul: 0.11,
+    /** Red core → orange outer for rings */
+    colorR: 255,
+    colorG: 88,
+    colorB: 68,
+    colorROrange: 255,
+    colorGOrange: 148,
+    colorBOrange: 62,
+    /** Soft warm wash under the rings */
+    washRadiusMul: 2.48,
+    washAlphaMul: 0.17,
+    /** Extra crisis screen-shake multiplier at full intensity (0 = none) */
+    shakeBoostMul: 0.48,
+    /** Annoyed body wiggle (radians, scaled by intensity) */
+    annoyanceWiggleRad: 0.1,
   },
 };
 

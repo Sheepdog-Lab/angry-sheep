@@ -19,6 +19,7 @@ let victorySprites = {
 let hintCueSprites = {
   feeding: null,
   petting: null,
+  voice: null,
 };
 
 // -- Public API --
@@ -27,9 +28,13 @@ export function setVictoryCelebrationSprites(sprites) {
   victorySprites = { ...victorySprites, ...sprites };
 }
 
-/** @param {{ feeding?: import('p5').Image | null; petting?: import('p5').Image | null }} imgs */
+/** @param {{ feeding?: import('p5').Image | null; petting?: import('p5').Image | null; voice?: import('p5').Image | null }} imgs */
 export function setCrisisHintCueSprites(imgs) {
-  hintCueSprites = { feeding: imgs.feeding ?? null, petting: imgs.petting ?? null };
+  hintCueSprites = {
+    feeding: imgs.feeding ?? null,
+    petting: imgs.petting ?? null,
+    voice: imgs.voice ?? null,
+  };
 }
 
 /** Skip win outro early (keyboard). */
@@ -180,9 +185,16 @@ function drawHints(p, s) {
     p.push();
     p.translate(px, bubbleY + bob);
 
-    const showGrass = (Math.floor(frameCounter / 90) % 2) === 0;
-    const cueImg = showGrass ? hintCueSprites.feeding : hintCueSprites.petting;
-    if (cueImg && cueImg.width > 2 && cueImg.height > 2) {
+    // One cue at a time, cycling: grass → pet → voice → … (~1.5s each at 60fps)
+    const cueCycle = [
+      hintCueSprites.feeding,
+      hintCueSprites.petting,
+      hintCueSprites.voice,
+    ].filter((img) => img && img.width > 2 && img.height > 2);
+
+    if (cueCycle.length > 0) {
+      const HINT_CYCLE_FRAMES = 90;
+      const cueImg = cueCycle[Math.floor(frameCounter / HINT_CYCLE_FRAMES) % cueCycle.length];
       const maxSide = s * 0.078;
       const sc = Math.min(maxSide / cueImg.width, maxSide / cueImg.height);
       const iw = cueImg.width * sc;

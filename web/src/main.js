@@ -6,7 +6,9 @@ import {
   TABLE_RADIUS,
   TERRAIN_TEXTURE_URL,
   SHEEP_TEXTURE_URL,
+  ANGER_INDICATOR_URL,
   SHEEPDOG_TEXTURE_URL,
+  HERDING_INDICATOR_URL,
   BLOCKS_TEXTURE_URL,
   GRASS_TEXTURE_URL,
   PEN_TEXTURE_URL,
@@ -17,16 +19,24 @@ import {
   TERRAIN_GRASS_CLUMP_URL,
   CALMING_FEEDING_URL,
   CALMING_PETTING_URL,
+  CALMING_VOICE_URL,
   SESSION,
 } from './config.js';
 import * as Input from './input.js';
 import { drawPen, setPenSprite } from './pen.js';
 import { tickIdleHerd } from './idleHerd.js';
-import { drawTools, setGrassSprite, setSheepdogSprite, setBlockSprite } from './tools.js';
+import {
+  drawTools,
+  setGrassSprite,
+  setSheepdogSprite,
+  setHerdingIndicatorSprite,
+  setBlockSprite,
+} from './tools.js';
 import {
   updateFlock,
   drawFlock,
   setSheepSprite,
+  setAngerIndicatorSprite,
   setCalmingCueSprites,
   getFlock,
   isAnySheepEating,
@@ -122,7 +132,11 @@ new p5((p) => {
   /** @type {import('p5').Image | null} */
   let sheepImg = null;
   /** @type {import('p5').Image | null} */
+  let angerIndicatorImg = null;
+  /** @type {import('p5').Image | null} */
   let sheepdogImg = null;
+  /** @type {import('p5').Image | null} */
+  let herdingIndicatorImg = null;
   /** @type {import('p5').Image | null} */
   let grassImg = null;
   /** @type {import('p5').Image | null} */
@@ -143,11 +157,15 @@ new p5((p) => {
   let calmingFeedingImg = null;
   /** @type {import('p5').Image | null} */
   let calmingPettingImg = null;
+  /** @type {import('p5').Image | null} */
+  let calmingVoiceImg = null;
 
   p.preload = () => {
     terrainImg = p.loadImage(TERRAIN_TEXTURE_URL);
     sheepImg = p.loadImage(SHEEP_TEXTURE_URL);
+    angerIndicatorImg = p.loadImage(ANGER_INDICATOR_URL);
     sheepdogImg = p.loadImage(SHEEPDOG_TEXTURE_URL);
+    herdingIndicatorImg = p.loadImage(HERDING_INDICATOR_URL);
     grassImg = p.loadImage(GRASS_TEXTURE_URL);
     blockImg = p.loadImage(BLOCKS_TEXTURE_URL);
     penImg = p.loadImage(PEN_TEXTURE_URL);
@@ -158,6 +176,7 @@ new p5((p) => {
     terrainGrassClumpImg = p.loadImage(TERRAIN_GRASS_CLUMP_URL);
     calmingFeedingImg = p.loadImage(CALMING_FEEDING_URL);
     calmingPettingImg = p.loadImage(CALMING_PETTING_URL);
+    calmingVoiceImg = p.loadImage(CALMING_VOICE_URL);
   };
 
   p.setup = () => {
@@ -165,9 +184,19 @@ new p5((p) => {
     canvasEl = p.createCanvas(canvasSize, canvasSize);
     canvasEl.parent('gameStage');
     setSheepSprite(sheepImg);
-    setCalmingCueSprites({ feeding: calmingFeedingImg, petting: calmingPettingImg });
-    Session.setCrisisHintCueSprites({ feeding: calmingFeedingImg, petting: calmingPettingImg });
+    setAngerIndicatorSprite(angerIndicatorImg);
+    setCalmingCueSprites({
+      feeding: calmingFeedingImg,
+      petting: calmingPettingImg,
+      voice: calmingVoiceImg,
+    });
+    Session.setCrisisHintCueSprites({
+      feeding: calmingFeedingImg,
+      petting: calmingPettingImg,
+      voice: calmingVoiceImg,
+    });
     setSheepdogSprite(sheepdogImg);
+    setHerdingIndicatorSprite(herdingIndicatorImg);
     setGrassSprite(grassImg);
     setBlockSprite(blockImg);
     setPenSprite(penImg);

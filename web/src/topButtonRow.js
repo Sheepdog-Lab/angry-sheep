@@ -11,10 +11,10 @@
 //   last  append → rightmost
 // Callers should respect this when initializing.
 //
-// HUD elements mount into #fullscreenApp (the same element the
-// fullscreen API is called on) so they stay visible in fullscreen mode.
-// Outside fullscreen, #fullscreenApp covers the viewport, so position:
-// fixed children land in the same visual spot either way.
+// HUD elements mount into #fullscreenApp (the same element the fullscreen API
+// targets) so they stay visible in fullscreen mode. #fullscreenApp covers the
+// viewport; position:fixed children land consistently whether native fullscreen
+// is active or not.
 
 export function getHudHost() {
   return document.getElementById('fullscreenApp') || document.body;

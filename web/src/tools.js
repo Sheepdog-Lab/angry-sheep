@@ -10,6 +10,8 @@ let grassSprite = null;
 /** @type {import('p5').Image | null} */
 let grassSpriteTransparent = null;
 let grassProcessedKey = null;
+/** @type {import('p5').Image | null} */
+let herdingIndicatorImg = null;
 
 // Store per-tool animated aiming angle (radians) so rotation is smooth.
 /** @type {Map<number, number>} */
@@ -42,6 +44,13 @@ export function setGrassSprite(img) {
   grassSprite = img;
   grassSpriteTransparent = null; // recompute transparency if a new image is loaded
   grassProcessedKey = null;
+}
+
+/**
+ * @param {import('p5').Image | null} img
+ */
+export function setHerdingIndicatorSprite(img) {
+  herdingIndicatorImg = img;
 }
 
 /**
@@ -128,8 +137,9 @@ export function drawTools(p, tools, canvasSize, hoveredId, flock) {
       p.fill(color);
       drawBlock(p, canvasSize);
     } else if (tool.type === 'sheepdog') {
+      // Wedge first, dog on top (same +x = forward after rotate(rotDeg) above), matching reference layering.
+      drawHerdingIndicator(p, canvasSize);
       drawSheepdog(p, canvasSize);
-      drawShovelOutline(p, canvasSize);
     } else if (tool.type === 'grass') {
       p.noStroke();
       p.fill(color);
@@ -343,36 +353,78 @@ function drawSheepdog(p, s) {
   p.pop();
 }
 
-function drawShovelOutline(p, s) {
-  // Shovel shape in dog-local space: +x = forward, ±y = sides.
-  // Dimensions derived from SHEEP.dogShovelHalfFlat and SHEEP.dogShovelArmLen
-  // so the visual exactly matches the physics zone.
-  const r = TOOL_SIZES.sheepdog * s; // dog radius in pixels
-  const W = (SHEEP.dogShovelHalfFlat / TOOL_SIZES.sheepdog) * r; // = 3r
-  const Ax = (SHEEP.dogShovelArmLen / TOOL_SIZES.sheepdog) * r * Math.SQRT1_2; // ≈ 1.41r
-  const Ay = Ax; // 45° arm: forward and side extents are equal
+/** Dog-local +x = forward; matches shovel outline footprint. */
+function shovelIndicatorFootprint(s) {
+  const r = TOOL_SIZES.sheepdog * s;
+  const W = (SHEEP.dogShovelHalfFlat / TOOL_SIZES.sheepdog) * r;
+  const Ax = (SHEEP.dogShovelArmLen / TOOL_SIZES.sheepdog) * r * Math.SQRT1_2;
+  const Ay = Ax;
+  const lateral = 2 * (W + Ay) * 1.05;
+  return { r, W, Ax, Ay, lateral };
+}
 
-  // Four key points of the shovel (open U-shape, opening toward dog)
-  const upperFlatX = 0; const upperFlatY = -W; // upper end of flat face
-  const lowerFlatX = 0; const lowerFlatY = +W; // lower end of flat face
-  const upperTipX = Ax; const upperTipY = -(W + Ay); // upper 45° arm tip
-  const lowerTipX = Ax; const lowerTipY = +(W + Ay); // lower 45° arm tip
+// Shift the wedge along −x (toward the dog’s tail) so the narrow end tucks under the body.
+const HERDING_INDICATOR_BACK_MULT = 0.9;
+
+/**
+ * Herding cone in dog-local space after `rotate(angle_deg)`: +x = forward, origin = tool center.
+ * Draw this before `drawSheepdog` so the dog sprite is painted on top of the wedge.
+ */
+function drawHerdingIndicator(p, s) {
+  const { lateral, r } = shovelIndicatorFootprint(s);
+  const img = herdingIndicatorImg;
+  const iw = img?.width || 344;
+  const ih = img?.height || 81;
+  // PNG: iw = flare (±y), ih = depth (+x); keep aspect for world depth along +x.
+  const forward = lateral * (ih / iw);
+  const backOffset = r * HERDING_INDICATOR_BACK_MULT + forward * 0.12;
+
+  p.push();
+  p.translate(-backOffset, 0);
+
+  if (img && img.width > 0) {
+    p.push();
+    // PNG “up” → dog forward (+x)
+    p.rotate(-p.HALF_PI);
+    p.imageMode(p.CORNER);
+    p.noStroke();
+    p.tint(255, 255, 255, 228);
+    p.translate(0, forward);
+    p.scale(1, -1);
+    p.image(img, -lateral / 2, -forward, lateral, forward);
+    p.noTint();
+    p.pop();
+    p.pop();
+    return;
+  }
+
+  drawShovelOutlineFallback(p, s);
+  p.pop();
+}
+
+function drawShovelOutlineFallback(p, s) {
+  const { r, W, Ax, Ay } = shovelIndicatorFootprint(s);
+  const upperFlatX = 0;
+  const upperFlatY = -W;
+  const lowerFlatX = 0;
+  const lowerFlatY = +W;
+  const upperTipX = Ax;
+  const upperTipY = -(W + Ay);
+  const lowerTipX = Ax;
+  const lowerTipY = +(W + Ay);
 
   p.push();
   p.noFill();
-  p.stroke(255, 220, 50, 210); // golden yellow, semi-transparent
+  p.stroke(255, 220, 50, 210);
   p.strokeWeight(r * 0.18);
   p.strokeCap(p.ROUND);
   p.strokeJoin(p.ROUND);
-
-  // Draw as an open polyline: upper tip → upper flat → lower flat → lower tip
   p.beginShape();
   p.vertex(upperTipX, upperTipY);
   p.vertex(upperFlatX, upperFlatY);
   p.vertex(lowerFlatX, lowerFlatY);
   p.vertex(lowerTipX, lowerTipY);
-  p.endShape(); // intentionally open — no CLOSE
-
+  p.endShape();
   p.pop();
 }
 

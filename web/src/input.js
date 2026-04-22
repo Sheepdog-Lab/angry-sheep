@@ -52,6 +52,14 @@ export function init(p, size) {
   p.mouseDragged = onMouseDragged;
   p.mouseReleased = onMouseReleased;
   p.mouseWheel = onMouseWheel;
+  p.touchStarted = onTouchStarted;
+  p.touchMoved = onTouchMoved;
+  p.touchEnded = onTouchEnded;
+
+  if (p.canvas) {
+    p.canvas.style.touchAction = 'none';
+    p.canvas.addEventListener('touchcancel', onCanvasTouchCancel, { passive: true });
+  }
 
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('keyup', onKeyUp);
@@ -126,7 +134,11 @@ export function drawHUD(p, size) {
   p.noStroke();
   p.textSize(11);
   p.textAlign(p.LEFT, p.BOTTOM);
-  p.text('Drag tools  |  Scroll: rotate  |  Hold V: speak  |  Hold click near sheep: pet', margin, s - margin);
+  p.text(
+    'Drag tools (mouse or touch)  |  Scroll: rotate  |  Hold V: speak  |  Hold click / finger near sheep: pet',
+    margin,
+    s - margin,
+  );
 }
 
 // -- Internal helpers --
@@ -171,7 +183,8 @@ function pointer(p) {
 
 // -- Event handlers --
 
-function onMousePressed() {
+/** Shared with mouse + touch so iPad can drag blocks / sheepdog. */
+function pointerDownAt() {
   if (getGameMode() !== 'digital') return;
   const p = p5Ref;
   const { x: mx, y: my } = pointer(p);
@@ -194,10 +207,9 @@ function onMousePressed() {
     dragOffsetX = tool.x - n.x;
     dragOffsetY = tool.y - n.y;
   }
-  // Otherwise, mouseIsDown with no dragId → petting (handled in updateHover)
 }
 
-function onMouseDragged() {
+function pointerDragMove() {
   if (getGameMode() !== 'digital') return;
   if (dragId === null) return;
   const p = p5Ref;
@@ -208,7 +220,6 @@ function onMouseDragged() {
   if (tool) {
     let tx = n.x + dragOffsetX;
     let ty = n.y + dragOffsetY;
-    // Clamp to table circle with margin so tools stay fully visible
     const dx = tx - 0.5;
     const dy = ty - 0.5;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -222,7 +233,7 @@ function onMouseDragged() {
   }
 }
 
-function onMouseReleased() {
+function pointerUp() {
   if (getGameMode() !== 'digital') {
     resetInteractionState();
     return;
@@ -232,6 +243,52 @@ function onMouseReleased() {
   state.pet.active = false;
   state.pet.x = null;
   state.pet.y = null;
+}
+
+function onMousePressed() {
+  if (getGameMode() !== 'digital') return;
+  const p = p5Ref;
+  if (p.mouseButton !== p.LEFT) return;
+  pointerDownAt();
+}
+
+function onMouseDragged() {
+  pointerDragMove();
+}
+
+function onMouseReleased() {
+  pointerUp();
+}
+
+/** Touch: same drag path as mouse (return false → prevent scroll / delayed click). */
+function onTouchStarted() {
+  if (getGameMode() !== 'digital') return;
+  if (Session.getPhase() === 'win') return;
+  if (p5Ref.touches.length === 0) return;
+  pointerDownAt();
+  return false;
+}
+
+function onTouchMoved() {
+  if (getGameMode() !== 'digital') return;
+  if (dragId !== null) pointerDragMove();
+  return false;
+}
+
+function onTouchEnded() {
+  if (getGameMode() !== 'digital') return;
+  if (dragId !== null) {
+    pointerUp();
+    return false;
+  }
+  if (p5Ref.touches.length === 0) pointerUp();
+  return false;
+}
+
+/** p5 has no touchCancelled hook; browser still fires touchcancel on iOS. */
+function onCanvasTouchCancel() {
+  if (getGameMode() !== 'digital') return;
+  pointerUp();
 }
 
 function onMouseWheel(event) {

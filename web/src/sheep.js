@@ -17,6 +17,10 @@ let sheepSprite = null;
 let calmingFeedingImg = null;
 /** @type {import('p5').Image | null} */
 let calmingPettingImg = null;
+/** @type {import('p5').Image | null} */
+let calmingVoiceImg = null;
+/** @type {import('p5').Image | null} */
+let angerIndicatorImg = null;
 
 /**
  * Called from main.js after preload so flock drawing can use the PNG sprite.
@@ -27,11 +31,19 @@ export function setSheepSprite(img) {
 }
 
 /**
- * @param {{ feeding?: import('p5').Image | null; petting?: import('p5').Image | null }} imgs
+ * @param {import('p5').Image | null} img
+ */
+export function setAngerIndicatorSprite(img) {
+  angerIndicatorImg = img;
+}
+
+/**
+ * @param {{ feeding?: import('p5').Image | null; petting?: import('p5').Image | null; voice?: import('p5').Image | null }} imgs
  */
 export function setCalmingCueSprites(imgs) {
   calmingFeedingImg = imgs?.feeding ?? null;
   calmingPettingImg = imgs?.petting ?? null;
+  calmingVoiceImg = imgs?.voice ?? null;
 }
 
 // -- Public API --
@@ -1177,6 +1189,132 @@ function interactionBodyPulse(u, IF) {
   return Math.sin(u * Math.PI) * vfxAlphaEnvelope(u, IF.vfxFadeStart, IF.vfxFadePower);
 }
 
+function angerVfxIntensity(sheep) {
+  if (sheep.captured) return 0;
+  const AV = SHEEP.angerVfx;
+  const full = AV.stressFullAt;
+  const start = AV.stressRampStart;
+  if (sheep.stress <= start) return 0;
+  const t = (sheep.stress - start) / Math.max(1e-6, full - start);
+  const u = Math.min(1, Math.max(0, t));
+  return Math.pow(u, AV.fadeCurvePower);
+}
+
+/**
+ * Comic anger aura: pulsing rings, zig-zags, radiating ticks, warm wash.
+ * Call inside `rotate(facing + π/2)` after body scale so it tracks the sheep.
+ */
+function drawSheepAngerVfx(p, sheep, r, intensity) {
+  if (intensity < 0.02) return;
+  const AV = SHEEP.angerVfx;
+  const tick = sheep._tick || 0;
+  const id = sheep.id * 0.73;
+  const flick = 0.82 + 0.18 * Math.sin(tick * AV.flickerSpeed + id);
+  const pulse = Math.sin(tick * AV.pulseSpeed);
+  const pulseF = 0.85 + 0.15 * pulse;
+  const I = intensity * flick;
+
+  // Warm wash (readable on green terrain)
+  p.push();
+  p.noStroke();
+  const washA = AV.washAlphaMul * 255 * I;
+  p.fill(AV.colorR, Math.min(255, AV.colorG + 40), AV.colorB, washA * 0.42);
+  p.ellipse(0, 0, r * AV.washRadiusMul * 2.05, r * AV.washRadiusMul * 1.95);
+  p.fill(AV.colorROrange, AV.colorGOrange, AV.colorBOrange, washA * 0.22);
+  p.ellipse(0, 0, r * (AV.washRadiusMul * 1.35) * 2, r * (AV.washRadiusMul * 1.28) * 2);
+  p.pop();
+
+  const ringCount = 3;
+  const alphaFall = AV.ringOutwardAlphaFalloff ?? 0.78;
+  const strokeThin = AV.ringOutwardStrokeThinning ?? 0.45;
+  for (let ring = 0; ring < ringCount; ring++) {
+    const phase = tick * AV.pulseSpeed + ring * AV.auraPulsePhaseSpread;
+    const pf = 0.8 + 0.2 * Math.sin(phase);
+    const tRing = (ring + 1) / ringCount;
+    const radMul =
+      AV.auraRadiusMulMin +
+      (AV.auraRadiusMulMax - AV.auraRadiusMulMin) * tRing * (1 + AV.outwardPulseMul * pulseF);
+    const rad = r * radMul * pf * (0.92 + 0.08 * intensity);
+    const mix = ring / Math.max(1, ringCount - 1);
+    const outwardEase = 1 - mix * alphaFall;
+    const strokeEase = 1 - mix * strokeThin;
+    const sw =
+      (AV.auraStrokePxMin + (AV.auraStrokePxMax - AV.auraStrokePxMin) * pf * intensity) *
+      strokeEase;
+    const cr = AV.colorR + (AV.colorROrange - AV.colorR) * mix;
+    const cg = AV.colorG + (AV.colorGOrange - AV.colorG) * mix;
+    const cb = AV.colorB + (AV.colorBOrange - AV.colorB) * mix;
+    p.noFill();
+    p.stroke(cr, cg, cb, (135 + 70 * intensity) * flick * outwardEase);
+    p.strokeWeight(Math.max(0.55, sw));
+    p.ellipse(0, 0, rad * 2, rad * 2 * 0.9);
+  }
+
+  // Radiating “burst” ticks
+  const marks = Math.max(4, Math.round(AV.markCount));
+  for (let m = 0; m < marks; m++) {
+    const ang = (m / marks) * Math.PI * 2 + tick * 0.055 + id * 0.21;
+    const len =
+      r *
+      AV.markLengthMul *
+      intensity *
+      (0.72 + 0.38 * Math.sin(tick * AV.pulseSpeed * 2.1 + m * 0.8));
+    p.push();
+    p.rotate(ang);
+    p.stroke(255, 118, 88, 195 * I);
+    p.strokeWeight(2.1 + 0.6 * intensity);
+    p.line(r * AV.markOrbitRMul, 0, r * AV.markOrbitRMul + len, 0);
+    p.pop();
+  }
+
+  // Comic zig-zag arcs
+  const nZig = Math.max(3, Math.round(AV.zigZagCount));
+  for (let k = 0; k < nZig; k++) {
+    const base = (k / nZig) * Math.PI * 2 + tick * 0.048 + id * 0.35;
+    const R = r * AV.zigZagRadiusMul * (0.9 + 0.1 * Math.sin(tick * 0.17 + k * 1.1));
+    const amp = r * AV.zigZagAmpMul * intensity;
+    p.push();
+    p.rotate(base);
+    p.translate(R, 0);
+    p.rotate(Math.PI / 2);
+    p.noFill();
+    p.stroke(235, 95, 72, 200 * I);
+    const zigSw =
+      (AV.zigZagStrokePx ?? 3.05) + (AV.zigZagStrokeIntensityAdd ?? 0.65) * intensity;
+    p.strokeWeight(zigSw);
+    p.beginShape();
+    const segs = 5;
+    for (let z = 0; z <= segs; z++) {
+      const v = (z / segs - 0.5) * r * 0.55;
+      const side = z % 2 === 0 ? 1 : -1;
+      const u = Math.sin(tick * 0.33 + z * 0.9 + k) * 0.25;
+      p.vertex(side * amp * (1 + u), v);
+    }
+    p.endShape();
+    p.pop();
+  }
+}
+
+/**
+ * “Anger veins” above the sheep’s head in bitmap space (−y = nose / forward in sprite frame).
+ * Opacity tracks stress so it eases out as the sheep calms.
+ */
+function drawSheepAngerIndicator(p, r, stressRatio) {
+  if (!angerIndicatorImg || angerIndicatorImg.width <= 0) return;
+  if (stressRatio < 0.018) return;
+  const a = Math.pow(Math.min(1, stressRatio), 0.88) * 255;
+  const d = r * 1.08;
+  // Offset above the head (slightly past the sprite top) so the icon doesn’t touch the wool.
+  const gap = r * 0.2;
+  const headY = -r * 1.2 - gap;
+  p.push();
+  p.imageMode(p.CENTER);
+  p.tint(255, 255, 255, a);
+  p.image(angerIndicatorImg, 0, headY, d, d);
+  p.noTint();
+  p.pop();
+}
+
 function drawSheep(p, sheep, canvasSize) {
   const s = canvasSize;
   const px = sheep.x * s;
@@ -1184,6 +1322,8 @@ function drawSheep(p, sheep, canvasSize) {
   const r = SHEEP.radius * s;
   const inCrisis = sheep.stress >= SHEEP.crisisThreshold;
   const stressRatio = Math.min(sheep.stress / SHEEP.crisisThreshold, 1);
+  const angerIntensity = angerVfxIntensity(sheep);
+  const AV = SHEEP.angerVfx;
 
   const grazingLocked =
     sheep.stationaryGrazer &&
@@ -1203,9 +1343,9 @@ function drawSheep(p, sheep, canvasSize) {
     p.rotate(lean * 0.22);
   }
 
-  // Crisis shake
+  // Crisis shake (extra when anger VFX is strong — tunable via angerVfx.shakeBoostMul)
   if (inCrisis) {
-    const shake = 2 + sheep.stress * 1.5;
+    const shake = (2 + sheep.stress * 1.5) * (1 + angerIntensity * AV.shakeBoostMul);
     p.translate(
       (Math.random() - 0.5) * shake,
       (Math.random() - 0.5) * shake,
@@ -1246,6 +1386,12 @@ function drawSheep(p, sheep, canvasSize) {
       petPulse * IF.petSquashStretchY -
       feedPulse * IF.feedSquashStretchY;
     p.scale(sx, sy);
+    const annoy =
+      angerIntensity * AV.annoyanceWiggleRad * Math.sin(sheep._tick * 0.38 + sheep.id * 1.1);
+    p.rotate(annoy);
+    if (angerIntensity > 0.02) {
+      drawSheepAngerVfx(p, sheep, r, angerIntensity);
+    }
     const size = r * 2.4;
     p.imageMode(p.CENTER);
     if (inCrisis) {
@@ -1270,10 +1416,14 @@ function drawSheep(p, sheep, canvasSize) {
       p.tint(tr, tg, tb, 255);
     }
     p.image(sheepSprite, 0, 0, size, size);
+    if (!sheep.captured) {
+      drawSheepAngerIndicator(p, r, stressRatio);
+    }
     p.noTint();
     p.pop();
   } else {
     p.push();
+    p.rotate(facing + Math.PI / 2);
     const bounce = (petPulse * IF.petBounceR + feedPulse * IF.feedBounceR) * r;
     p.translate(0, -bounce);
     p.translate(
@@ -1293,9 +1443,18 @@ function drawSheep(p, sheep, canvasSize) {
       petPulse * IF.petSquashStretchY -
       feedPulse * IF.feedSquashStretchY;
     p.scale(sx, sy);
+    const annoy =
+      angerIntensity * AV.annoyanceWiggleRad * Math.sin(sheep._tick * 0.38 + sheep.id * 1.1);
+    p.rotate(annoy);
+    if (angerIntensity > 0.02) {
+      drawSheepAngerVfx(p, sheep, r, angerIntensity);
+    }
     p.noStroke();
     p.fill(inCrisis ? '#e03030' : SHEEP.color);
     p.ellipse(0, 0, r * 1.6, r * 1.4);
+    if (!sheep.captured) {
+      drawSheepAngerIndicator(p, r, stressRatio);
+    }
     p.pop();
   }
 
@@ -1530,13 +1689,24 @@ function isCalmingCueImageReady(img) {
 
 let calmingCueMissingWarned = false;
 
-/** Feeding / petting: PNG only (no badge/plate); alpha from art + tint pulse; float/breathe from parent. */
-function drawCalmingFeedPetArt(p, r, kind, pulse) {
-  const img = kind === 'grass' ? calmingFeedingImg : calmingPettingImg;
+/** Feeding / petting / voice: PNG only; alpha from art + tint pulse; float/breathe from parent. @returns {boolean} */
+function drawCalmingCuePng(p, r, kind, pulse) {
+  const img =
+    kind === 'grass'
+      ? calmingFeedingImg
+      : kind === 'pet'
+        ? calmingPettingImg
+        : kind === 'voice'
+          ? calmingVoiceImg
+          : null;
   const isGrass = kind === 'grass';
 
   if (!isCalmingCueImageReady(img)) {
-    if (!calmingCueMissingWarned && typeof console !== 'undefined') {
+    if (
+      (kind === 'pet' || kind === 'grass') &&
+      !calmingCueMissingWarned &&
+      typeof console !== 'undefined'
+    ) {
       calmingCueMissingWarned = true;
       console.warn(
         '[calming] Feeding/petting PNG not ready (failed load or 1×1 placeholder). Check network tab for',
@@ -1544,7 +1714,7 @@ function drawCalmingFeedPetArt(p, r, kind, pulse) {
         'asset.',
       );
     }
-    return;
+    return false;
   }
 
   const targetH = r * 1.72;
@@ -1556,6 +1726,7 @@ function drawCalmingFeedPetArt(p, r, kind, pulse) {
   p.tint(255, 255, 255, alpha);
   p.image(img, 0, -r * 0.05, w, h);
   p.noTint();
+  return true;
 }
 
 /**
@@ -1578,7 +1749,12 @@ function drawCalmingIndicator(p, sheep, r, kind) {
   p.scale(breathe);
 
   if (kind === 'pet' || kind === 'grass') {
-    drawCalmingFeedPetArt(p, r, kind, pulse);
+    drawCalmingCuePng(p, r, kind, pulse);
+    p.pop();
+    return;
+  }
+
+  if (kind === 'voice' && drawCalmingCuePng(p, r, 'voice', pulse)) {
     p.pop();
     return;
   }

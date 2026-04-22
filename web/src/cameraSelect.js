@@ -11,6 +11,7 @@ import { setGameMode } from './gameMode.js';
 
 const STORAGE_KEY = 'angrySheepCameraDeviceId';
 const PANEL_COLLAPSED_KEY = 'angrySheepCameraPanelCollapsed';
+const PANEL_HIDDEN_KEY = 'angrySheepCameraPanelFullyHidden';
 const CAMERA_ENABLED_KEY = 'angrySheepCameraEnabled';
 let currentStream = null;
 let cameraActive = false;
@@ -46,6 +47,32 @@ function setCameraPanelCollapsed(collapsed) {
   }
 }
 
+/** iPad Safari: reliable tap (touchend + deduped click). */
+function bindTap(el, handler) {
+  if (!el) return;
+  let ateTouch = false;
+  el.addEventListener(
+    'touchend',
+    (e) => {
+      ateTouch = true;
+      e.preventDefault();
+      handler();
+      window.setTimeout(() => {
+        ateTouch = false;
+      }, 450);
+    },
+    { passive: false },
+  );
+  el.addEventListener('click', (e) => {
+    if (ateTouch) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    handler();
+  });
+}
+
 function initCameraPanelToggle() {
   const panel = document.getElementById('cameraPanel');
   const toggle = document.getElementById('cameraPanelToggle');
@@ -59,8 +86,49 @@ function initCameraPanelToggle() {
   }
   setCameraPanelCollapsed(initialCollapsed);
 
-  toggle.addEventListener('click', () => {
+  bindTap(toggle, () => {
     setCameraPanelCollapsed(!panel.classList.contains('camera-panel--collapsed'));
+  });
+}
+
+/**
+ * Progressive disclosure: hide the entire camera panel; show a small “Camera” chip to reopen.
+ */
+function setCameraPanelFullyHidden(hidden) {
+  document.body.classList.toggle('camera-panel-hidden', hidden);
+  const reveal = document.getElementById('cameraPanelReveal');
+  if (reveal) {
+    reveal.hidden = !hidden;
+  }
+  const disclose = document.getElementById('cameraPanelDisclose');
+  if (disclose) {
+    disclose.setAttribute('aria-expanded', hidden ? 'false' : 'true');
+  }
+  try {
+    localStorage.setItem(PANEL_HIDDEN_KEY, hidden ? '1' : '0');
+  } catch (e) {
+    /* private mode */
+  }
+}
+
+function initCameraPanelDisclosure() {
+  const disclose = document.getElementById('cameraPanelDisclose');
+  const reveal = document.getElementById('cameraPanelReveal');
+  if (!disclose || !reveal) return;
+
+  let initialHidden = false;
+  try {
+    initialHidden = localStorage.getItem(PANEL_HIDDEN_KEY) === '1';
+  } catch (e) {
+    /* ignore */
+  }
+  setCameraPanelFullyHidden(initialHidden);
+
+  bindTap(disclose, () => {
+    setCameraPanelFullyHidden(true);
+  });
+  bindTap(reveal, () => {
+    setCameraPanelFullyHidden(false);
   });
 }
 
@@ -234,6 +302,7 @@ export async function initCameraSwitcher() {
   );
 
   initCameraPanelToggle();
+  initCameraPanelDisclosure();
 
   const select = getSelectEl();
   const video = getVideoEl();
@@ -311,7 +380,7 @@ export async function initCameraSwitcher() {
   // Wire camera on/off toggle
   const cameraToggle = document.getElementById('cameraToggle');
   if (cameraToggle) {
-    cameraToggle.addEventListener('click', () => {
+    bindTap(cameraToggle, () => {
       if (cameraActive) {
         stopCamera();
       } else {
