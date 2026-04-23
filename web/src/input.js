@@ -7,6 +7,7 @@ import {
   INITIAL_TOOLS,
 } from './config.js';
 import { hitTest } from './tools.js';
+import { resolveToolOverlap } from './toolCollide.js';
 import * as Session from './session.js';
 import { getGameMode, onGameModeChange } from './gameMode.js';
 import { getCanvasPointer } from './tableProjection.js';
@@ -235,8 +236,9 @@ function pointerDragMove() {
       tx = 0.5 + (dx / dist) * maxR;
       ty = 0.5 + (dy / dist) * maxR;
     }
-    tool.x = tx;
-    tool.y = ty;
+    const resolved = resolveToolOverlap(tool, tx, ty, state.tools);
+    tool.x = resolved.x;
+    tool.y = resolved.y;
   }
 }
 

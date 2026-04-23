@@ -146,7 +146,9 @@ export const TOOL_COLORS = {
 };
 
 export const TOOL_SIZES = {
-  block: { w: 0.12, h: 0.025 },
+  // Matches blocks.png (329×98) after contain-fit at h=0.025: w = 329/98 * 0.025.
+  // Keep in sync with drawBlock if the sprite changes.
+  block: { w: 0.083928, h: 0.025 },
   sheepdog: 0.03,
   grass: 0.02,
   comb: 0.022,
