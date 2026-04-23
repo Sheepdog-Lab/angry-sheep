@@ -209,7 +209,7 @@ export const SHEEP = {
   grassAttractForce: 0.002,
   grazeFillRate: 0.008,     // fullness gained per frame while near grass (calm sheep fill fast)
   grazeDigestRate: 0.001,   // fullness lost per frame while away from grass
-  blockDetectRadius: 0.05,  // sheep avoid blocks within this range
+  blockDetectRadius: 0.05,  // sheep avoid blocks within this range (also used by grazer-wake proximity)
   blockRepelForce: 0.003,   // (legacy; unused after bounce rewrite)
   // Block bounce — sheep deflect off blocks with a randomized angle instead of steering around.
   blockBounceMinDeg: 90,            // min deflection from incoming path
@@ -217,6 +217,7 @@ export const SHEEP = {
   blockBounceElasticity: 0.9,       // speed retained after bounce
   blockBounceMinSpeed: 0.0005,      // below this incoming speed, skip the bounce (avoids jitter on near-stationary sheep)
   blockBounceCooldownFrames: 8,     // frames a sheep is immune to re-bouncing the same block
+  blockBoundingMargin: 0.01,        // extra radius added to the block bounding circle for the OBB early-out check
   // Group herding — when the sheepdog pushes one sheep, nearby sheep receive
   // a scaled copy of the same push so clusters move together rather than
   // getting picked off one at a time.

@@ -1,4 +1,4 @@
-import { PHYSICAL_MODE, SHEEP, TABLE_RADIUS, PEN } from './config.js';
+import { PHYSICAL_MODE, SHEEP, TABLE_RADIUS, PEN, TOOL_SIZES } from './config.js';
 import { isInsidePen, isInGap, penEdgeInfo } from './pen.js';
 import { getDragId } from './input.js';
 import { playSfx } from './sound.js';
@@ -882,40 +882,88 @@ function applyToolReactions(sheep, tools) {
       }
     }
 
-    if (tool.type === 'block' && dist < SHEEP.blockDetectRadius && dist > 0.001) {
-      // Actively dragged block angers the sheep (independent of the bounce itself)
-      if (tool.id === getDragId()) {
-        sheep.stress = Math.min(
-          sheep.stress + SHEEP.blockDragStressRate,
-          SHEEP.crisisThreshold + 0.5,
-        );
-      }
+    if (tool.type === 'block') {
+      // Bounding-circle early-out: cheap skip when neither the current nor
+      // the projected next position is anywhere near the block. Uses the
+      // block's true extent (thin long side via hypot) plus a small margin.
+      const bcR = Math.hypot(TOOL_SIZES.block.w / 2, TOOL_SIZES.block.h / 2) + SHEEP.blockBoundingMargin;
+      const projX = sheep.x + sheep.vx;
+      const projY = sheep.y + sheep.vy;
+      const dxProj = projX - tool.x, dyProj = projY - tool.y;
+      const nearNow = dist < bcR;
+      const nearNext = (dxProj * dxProj + dyProj * dyProj) < bcR * bcR;
+      if (nearNow || nearNext) {
+        // Actively dragged block angers the sheep, same as before.
+        if (tool.id === getDragId() && dist < SHEEP.blockDetectRadius && dist > 0.001) {
+          sheep.stress = Math.min(
+            sheep.stress + SHEEP.blockDragStressRate,
+            SHEEP.crisisThreshold + 0.5,
+          );
+        }
 
-      // Bounce: reflect velocity off block with a randomized deflection in
-      // [blockBounceMinDeg, blockBounceMaxDeg] from the incoming path. Only
-      // triggers when the sheep is actually moving toward the block, and
-      // respects a short cooldown so a single contact doesn't re-fire every frame.
-      if ((sheep._blockBounceCooldown | 0) === 0) {
-        const nx = dx / dist; // block→sheep (outward normal)
-        const ny = dy / dist;
-        const speed = Math.sqrt(sheep.vx * sheep.vx + sheep.vy * sheep.vy);
-        const approach = -(sheep.vx * nx + sheep.vy * ny); // >0 if moving toward block
-        if (speed > SHEEP.blockBounceMinSpeed && approach > 0) {
-          const incomingAngle = Math.atan2(sheep.vy, sheep.vx);
-          const minRad = (SHEEP.blockBounceMinDeg * Math.PI) / 180;
-          const maxRad = (SHEEP.blockBounceMaxDeg * Math.PI) / 180;
-          const theta = minRad + Math.random() * (maxRad - minRad);
-          const sign = Math.random() < 0.5 ? -1 : 1;
-          let outAngle = incomingAngle + sign * theta;
-          // If the deflected direction still points into the block, flip sign.
-          if (Math.cos(outAngle) * nx + Math.sin(outAngle) * ny < 0) {
-            outAngle = incomingAngle - sign * theta;
+        // Resolve the hit as an OBB test: first check if the sheep is already
+        // penetrating the block (push out), then do a swept segment test
+        // against the next-frame projected position (catches tunneling).
+        let hitLx = 0, hitLy = 0, hitHw = 0, hitHh = 0, hitRot = 0;
+        let hit = false;
+        let pushedOutOfPenetration = false;
+
+        const contain = obbContains(tool, sheep.x, sheep.y);
+        if (contain.inside) {
+          hit = true;
+          hitLx = contain.lx; hitLy = contain.ly;
+          hitHw = contain.hw; hitHh = contain.hh; hitRot = contain.rot;
+          // Push sheep out along the nearest-edge normal by the penetration
+          // depth + epsilon so it doesn't stay stuck inside the block.
+          const { nx, ny } = obbEdgeNormal(hitLx, hitLy, hitHw, hitHh, hitRot);
+          const penX = hitHw - Math.abs(hitLx);
+          const penY = hitHh - Math.abs(hitLy);
+          const depth = Math.min(penX, penY) + 1e-4;
+          sheep.x += nx * depth;
+          sheep.y += ny * depth;
+          pushedOutOfPenetration = true;
+        } else {
+          const sweep = obbSweepHit(tool, sheep.x, sheep.y, projX, projY);
+          if (sweep && sweep.t0 >= 0 && sweep.t0 <= 1) {
+            hit = true;
+            hitLx = sweep.hx; hitLy = sweep.hy;
+            hitHw = sweep.hw; hitHh = sweep.hh; hitRot = sweep.rot;
+            // Back the sheep up to just outside the entry point along the
+            // edge normal so the reflected velocity takes it away from the
+            // surface, not through it.
+            const { nx, ny } = obbEdgeNormal(hitLx, hitLy, hitHw, hitHh, hitRot);
+            const hitWorldX = tool.x + (hitLx * Math.cos(hitRot) - hitLy * Math.sin(hitRot));
+            const hitWorldY = tool.y + (hitLx * Math.sin(hitRot) + hitLy * Math.cos(hitRot));
+            sheep.x = hitWorldX + nx * 1e-4;
+            sheep.y = hitWorldY + ny * 1e-4;
           }
-          const outSpeed = speed * SHEEP.blockBounceElasticity;
-          sheep.vx = Math.cos(outAngle) * outSpeed;
-          sheep.vy = Math.sin(outAngle) * outSpeed;
-          sheep.wanderAngle = outAngle;
-          sheep._blockBounceCooldown = SHEEP.blockBounceCooldownFrames;
+        }
+
+        if (hit && (sheep._blockBounceCooldown | 0) === 0) {
+          const { nx, ny } = obbEdgeNormal(hitLx, hitLy, hitHw, hitHh, hitRot);
+          const speed = Math.sqrt(sheep.vx * sheep.vx + sheep.vy * sheep.vy);
+          const approach = -(sheep.vx * nx + sheep.vy * ny);
+          // Penetration case: push-out already happened, so bounce regardless
+          // of approach sign (sheep may be stationary but overlapping).
+          const shouldBounce =
+            speed > SHEEP.blockBounceMinSpeed &&
+            (approach > 0 || pushedOutOfPenetration);
+          if (shouldBounce) {
+            const incomingAngle = Math.atan2(sheep.vy, sheep.vx);
+            const minRad = (SHEEP.blockBounceMinDeg * Math.PI) / 180;
+            const maxRad = (SHEEP.blockBounceMaxDeg * Math.PI) / 180;
+            const theta = minRad + Math.random() * (maxRad - minRad);
+            const sign = Math.random() < 0.5 ? -1 : 1;
+            let outAngle = incomingAngle + sign * theta;
+            if (Math.cos(outAngle) * nx + Math.sin(outAngle) * ny < 0) {
+              outAngle = incomingAngle - sign * theta;
+            }
+            const outSpeed = speed * SHEEP.blockBounceElasticity;
+            sheep.vx = Math.cos(outAngle) * outSpeed;
+            sheep.vy = Math.sin(outAngle) * outSpeed;
+            sheep.wanderAngle = outAngle;
+            sheep._blockBounceCooldown = SHEEP.blockBounceCooldownFrames;
+          }
         }
       }
     }
@@ -1099,6 +1147,80 @@ function toolRotationRad(tool) {
   if (typeof tool.rotation === 'number') return tool.rotation;
   if (typeof tool.angle_deg === 'number') return (tool.angle_deg * Math.PI) / 180;
   return null;
+}
+
+// OBB = oriented bounding box. Used by block collision: blocks are thin
+// rotated rectangles, so circle-vs-center checks fail both on detection
+// (miss the long axis) and on bounce normal (radial instead of edge-aligned).
+// All three helpers work in the block's local frame (rotate world by -rot
+// around the block center; the box becomes axis-aligned ±hw × ±hh).
+
+function obbContains(tool, px, py) {
+  const rot = toolRotationRad(tool) || 0;
+  const c = Math.cos(-rot), s = Math.sin(-rot);
+  const wx = px - tool.x, wy = py - tool.y;
+  const lx = wx * c - wy * s;
+  const ly = wx * s + wy * c;
+  const hw = TOOL_SIZES.block.w / 2, hh = TOOL_SIZES.block.h / 2;
+  return {
+    inside: Math.abs(lx) <= hw && Math.abs(ly) <= hh,
+    lx, ly, hw, hh, rot,
+  };
+}
+
+// Slab test: sheep segment (x0,y0)→(x1,y1) vs the block's OBB. Returns
+// { t0, hx, hy, hw, hh, rot } on hit (hx/hy are the local-frame entry point)
+// or null on miss. Catches tunneling when a single-frame step exceeds the
+// block's thin cross-section.
+function obbSweepHit(tool, x0, y0, x1, y1) {
+  const rot = toolRotationRad(tool) || 0;
+  const c = Math.cos(-rot), s = Math.sin(-rot);
+  const p0x = (x0 - tool.x) * c - (y0 - tool.y) * s;
+  const p0y = (x0 - tool.x) * s + (y0 - tool.y) * c;
+  const p1x = (x1 - tool.x) * c - (y1 - tool.y) * s;
+  const p1y = (x1 - tool.x) * s + (y1 - tool.y) * c;
+  const dx = p1x - p0x, dy = p1y - p0y;
+  const hw = TOOL_SIZES.block.w / 2, hh = TOOL_SIZES.block.h / 2;
+  let t0 = 0, t1 = 1;
+  const axes = [[p0x, dx, hw], [p0y, dy, hh]];
+  for (const [p, d, h] of axes) {
+    if (Math.abs(d) < 1e-9) {
+      if (p < -h || p > h) return null;
+      continue;
+    }
+    let e0 = (-h - p) / d;
+    let e1 = (h - p) / d;
+    if (e0 > e1) { const tmp = e0; e0 = e1; e1 = tmp; }
+    if (e0 > t0) t0 = e0;
+    if (e1 < t1) t1 = e1;
+    if (t0 > t1) return null;
+  }
+  return {
+    t0,
+    hx: p0x + dx * t0,
+    hy: p0y + dy * t0,
+    hw, hh, rot,
+  };
+}
+
+// World-space outward normal at local-frame point (lx, ly). Picks whichever
+// edge (±hw or ±hh) is closest, then rotates the local unit vector by +rot.
+function obbEdgeNormal(lx, ly, hw, hh, rot) {
+  const dxL = hw - Math.abs(lx);
+  const dyL = hh - Math.abs(ly);
+  let nlx, nly;
+  if (dxL < dyL) {
+    nlx = lx >= 0 ? 1 : -1;
+    nly = 0;
+  } else {
+    nlx = 0;
+    nly = ly >= 0 ? 1 : -1;
+  }
+  const cr = Math.cos(rot), sr = Math.sin(rot);
+  return {
+    nx: nlx * cr - nly * sr,
+    ny: nlx * sr + nly * cr,
+  };
 }
 
 function isPointInForwardCone(tool, dx, dy) {
