@@ -45,8 +45,8 @@ export function buildPhysicalTools(markers) {
         flipX,
         flipY,
       );
-      // Opposite spin sense vs physical tag (clockwise ↔ counterclockwise on screen).
-      const targetRotation = Math.atan2(Math.sin(-baseRot), Math.cos(-baseRot));
+      // Negated vs previous −baseRot: digital heading spins the other way vs the physical tag.
+      const targetRotation = Math.atan2(Math.sin(baseRot), Math.cos(baseRot));
       const previousRotation = rotationByMarkerId.has(marker.id)
         ? rotationByMarkerId.get(marker.id)
         : targetRotation;

@@ -444,7 +444,8 @@ export const MARKER_STREAM = {
 };
 
 export const PHYSICAL_MODE = {
-  angleOffsetRad: 0,
+  /** Added to streamed marker angle before flip/sign; π = face 180° opposite default. */
+  angleOffsetRad: Math.PI,
   /** Higher = marker rotation catches up faster (same tradeoff as MARKER_STREAM.smoothAlpha). */
   rotationSmoothAlpha: 1,
   debugArrowLength: 0.05,
