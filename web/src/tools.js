@@ -86,30 +86,44 @@ export function drawTools(p, tools, canvasSize, hoveredId, flock) {
     // Physical mode keeps the marker-driven heading instead.
     let rotDeg = typeof tool.angle_deg === 'number' ? tool.angle_deg : 0;
     if (tool.type === 'sheepdog' && !hasPhysicalRotation) {
-      const defaultRad = p.radians(tool.angle_deg);
-      let currentRad = sheepdogAimRadById.has(tool.id)
-        ? sheepdogAimRadById.get(tool.id)
-        : defaultRad;
-
-      let targetRad = defaultRad;
-      let proximity = 0;
-
-      if (Array.isArray(flock) && flock.length > 0) {
       const dogNx = tool.x;
       const dogNy = tool.y;
-
       let best = null;
       let bestDist = Infinity;
-      for (const sh of flock) {
-        // normalized distance (0..1 space)
-        const dx = sh.x - dogNx;
-        const dy = sh.y - dogNy;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = sh;
+      if (Array.isArray(flock) && flock.length > 0) {
+        for (const sh of flock) {
+          const dx = sh.x - dogNx;
+          const dy = sh.y - dogNy;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = sh;
+          }
         }
       }
+
+      // Manual wheel / R / arrows (input.js) set `sheepdogManualAim`; skip auto
+      // until the dog is well outside herd range so auto can take over again.
+      const herdClear =
+        !Array.isArray(flock) ||
+        flock.length === 0 ||
+        bestDist > SHEEP.dogHerdRadius * 1.08;
+      if (tool.sheepdogManualAim && herdClear) {
+        tool.sheepdogManualAim = false;
+      }
+
+      if (tool.sheepdogManualAim) {
+        const manualRad = p.radians(tool.angle_deg);
+        sheepdogAimRadById.set(tool.id, manualRad);
+        rotDeg = tool.angle_deg;
+      } else {
+        const defaultRad = p.radians(tool.angle_deg);
+        let currentRad = sheepdogAimRadById.has(tool.id)
+          ? sheepdogAimRadById.get(tool.id)
+          : defaultRad;
+
+        let targetRad = defaultRad;
+        let proximity = 0;
 
         if (best && bestDist < SHEEP.dogFleeRadius) {
           const dx = best.x - dogNx;
@@ -118,18 +132,18 @@ export function drawTools(p, tools, canvasSize, hoveredId, flock) {
           targetRad = Math.atan2(dy, dx);
           proximity = 1 - bestDist / SHEEP.dogFleeRadius; // 0..1
         }
-      }
 
-      const steerAlpha = 0.06 + proximity * 0.20; // faster when close
-      currentRad = lerpAngleRad(currentRad, targetRad, steerAlpha);
-      sheepdogAimRadById.set(tool.id, currentRad);
-      rotDeg = (currentRad * 180) / Math.PI;
-      // Keep the physics heading in sync with the visual: sheep.js reads
-      // tool.angle_deg to orient the shovel contact zone and the long-range
-      // herding cone. Without this write-back, digital-mode physics would
-      // face whatever random angle spawn/scroll-wheel set, not the direction
-      // the dog visibly points.
-      tool.angle_deg = rotDeg;
+        const steerAlpha = 0.06 + proximity * 0.20; // faster when close
+        currentRad = lerpAngleRad(currentRad, targetRad, steerAlpha);
+        sheepdogAimRadById.set(tool.id, currentRad);
+        rotDeg = (currentRad * 180) / Math.PI;
+        // Keep the physics heading in sync with the visual: sheep.js reads
+        // tool.angle_deg to orient the shovel contact zone and the long-range
+        // herding cone. Without this write-back, digital-mode physics would
+        // face whatever random angle spawn/scroll-wheel set, not the direction
+        // the dog visibly points.
+        tool.angle_deg = rotDeg;
+      }
     }
 
     p.rotate(p.radians(rotDeg));

@@ -1,4 +1,11 @@
-import { TOOL_COLORS, TOOL_HIT_RADIUS, TOOL_ROTATE_STEP, TABLE_RADIUS, INITIAL_TOOLS } from './config.js';
+import {
+  TOOL_COLORS,
+  TOOL_HIT_RADIUS,
+  TOOL_ROTATE_STEP,
+  TOOL_BLOCK_ROTATE_STEP,
+  TABLE_RADIUS,
+  INITIAL_TOOLS,
+} from './config.js';
 import { hitTest } from './tools.js';
 import * as Session from './session.js';
 import { getGameMode, onGameModeChange } from './gameMode.js';
@@ -135,7 +142,7 @@ export function drawHUD(p, size) {
   p.textSize(11);
   p.textAlign(p.LEFT, p.BOTTOM);
   p.text(
-    'Drag tools (mouse or touch)  |  Scroll: rotate  |  Hold V: speak  |  Calm: place the comb on a sheep, or hold click / finger near a sheep (no tool)',
+    'Drag tools  |  Scroll: rotate  |  ← → or A D (or R) over tool / while dragging; blocks & dogs fine step  |  Dog auto-aim returns when far from flock  |  Hold V: speak  |  Calm: comb or click near sheep',
     margin,
     s - margin,
   );
@@ -291,6 +298,13 @@ function onCanvasTouchCancel() {
   pointerUp();
 }
 
+function rotateStepDeg(toolType) {
+  if (toolType === 'block' || toolType === 'sheepdog') {
+    return TOOL_BLOCK_ROTATE_STEP;
+  }
+  return TOOL_ROTATE_STEP;
+}
+
 function onMouseWheel(event) {
   if (getGameMode() !== 'digital') return;
   const p = p5Ref;
@@ -303,9 +317,15 @@ function onMouseWheel(event) {
     // any manual angle every frame. Skip the write so the interaction is an
     // explicit no-op instead of silently broken. Still preventDefault so the
     // page doesn't scroll when the user spins the wheel over a dog.
-    if (tool && tool.type !== 'sheepdog') {
+    if (tool && tool.type === 'sheepdog') {
       const dir = event.delta > 0 ? 1 : -1;
-      tool.angle_deg = (tool.angle_deg + dir * TOOL_ROTATE_STEP) % 360;
+      const step = rotateStepDeg(tool.type);
+      tool.sheepdogManualAim = true;
+      tool.angle_deg = (tool.angle_deg + dir * step) % 360;
+    } else if (tool && tool.type !== 'sheepdog') {
+      const dir = event.delta > 0 ? 1 : -1;
+      const step = rotateStepDeg(tool.type);
+      tool.angle_deg = (tool.angle_deg + dir * step) % 360;
     }
     return false;
   }
@@ -320,12 +340,43 @@ function onKeyDown(event) {
 
   if (getGameMode() !== 'digital') return;
 
+  const steerKey =
+    event.code === 'ArrowLeft' ||
+    event.code === 'ArrowRight' ||
+    event.code === 'KeyA' ||
+    event.code === 'KeyD';
+  if (steerKey) {
+    const steerTypes = new Set(['block', 'sheepdog', 'grass', 'comb']);
+    const dragged = dragId !== null ? state.tools.find((t) => t.id === dragId) : null;
+    const hovered = hoveredId !== null ? state.tools.find((t) => t.id === hoveredId) : null;
+    const steerTool =
+      dragged && steerTypes.has(dragged.type)
+        ? dragged
+        : hovered && steerTypes.has(hovered.type)
+          ? hovered
+          : null;
+    if (steerTool) {
+      event.preventDefault();
+      const dirRight =
+        event.code === 'ArrowRight' || event.code === 'KeyD';
+      const dir = dirRight ? 1 : -1;
+      const step = rotateStepDeg(steerTool.type);
+      if (steerTool.type === 'sheepdog') steerTool.sheepdogManualAim = true;
+      steerTool.angle_deg = (steerTool.angle_deg + dir * step) % 360;
+    }
+    return;
+  }
+
   if (event.key === 'r' || event.key === 'R') {
     if (hoveredId !== null) {
       const tool = state.tools.find((t) => t.id === hoveredId);
-      // Same rationale as onMouseWheel: sheepdog angle is owned by auto-aim.
-      if (tool && tool.type !== 'sheepdog') {
-        tool.angle_deg = (tool.angle_deg + TOOL_ROTATE_STEP) % 360;
+      if (tool && tool.type === 'sheepdog') {
+        const step = rotateStepDeg(tool.type);
+        tool.sheepdogManualAim = true;
+        tool.angle_deg = (tool.angle_deg + step) % 360;
+      } else if (tool && tool.type !== 'sheepdog') {
+        const step = rotateStepDeg(tool.type);
+        tool.angle_deg = (tool.angle_deg + step) % 360;
       }
     }
   } else if (event.key === 'v' || event.key === 'V') {

@@ -153,7 +153,10 @@ export const TOOL_SIZES = {
 };
 
 export const TOOL_HIT_RADIUS = 0.035;
-export const TOOL_ROTATE_STEP = 15; // degrees per scroll/keypress
+/** Degrees per scroll wheel tick or R key — grass, comb (blocks use `TOOL_BLOCK_ROTATE_STEP`). */
+export const TOOL_ROTATE_STEP = 15;
+/** Finer rotation for blocks and sheepdogs (wheel, R, arrow keys in digital mode). */
+export const TOOL_BLOCK_ROTATE_STEP = 5;
 
 // Fixed tools placed on the table at startup
 export const INITIAL_TOOLS = [
