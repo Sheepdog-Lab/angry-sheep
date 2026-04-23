@@ -1,10 +1,8 @@
-// -- Shared top-right HUD row container --
+// -- Shared bottom-left HUD row container --
 //
-// Row 1 of the top-right cluster has buttons created in three different
-// modules (Reset the Game in main.js, Reset the Sound in hintButtons.js,
-// Tune in tuning.js). Rather than guess pixel widths to align them,
-// they all append into this single flex container. The container is
-// right-anchored, so adding buttons grows the strip leftward.
+// The row 1 cluster (master volume in sound.js, Tune in tuning.js) all
+// append into this single flex container. The container is left-anchored
+// at the bottom, so adding buttons grows the strip rightward.
 //
 // Items appear in the order they are appended:
 //   first append → leftmost
@@ -27,8 +25,8 @@ export function getTopButtonRow() {
   row = document.createElement('div');
   Object.assign(row.style, {
     position: 'fixed',
-    top: '10px',
-    right: '10px',
+    bottom: '10px',
+    left: '10px',
     zIndex: '1000',
     display: 'flex',
     gap: '6px',
@@ -37,8 +35,8 @@ export function getTopButtonRow() {
   return row;
 }
 
-// Vertical column that sits directly under the green Hold-to-Herd button
-// (mounted at top: 200, ~30px tall). The facilitator test buttons
+// Vertical column that sits directly above the green Hold-to-Herd button
+// (mounted at bottom: 200, ~30px tall). The facilitator test buttons
 // (Reset the Game, Demo Victory, Reset the Sound) stack here in append
 // order: first append → topmost, last append → bottom.
 let belowHerdColumn = null;
@@ -48,12 +46,12 @@ export function getBelowHerdColumn() {
   belowHerdColumn = document.createElement('div');
   Object.assign(belowHerdColumn.style, {
     position: 'fixed',
-    top: '244px',
-    right: '10px',
+    bottom: '244px',
+    left: '10px',
     zIndex: '1000',
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     gap: '6px',
   });
   getHudHost().appendChild(belowHerdColumn);

@@ -1,11 +1,9 @@
-// -- Top-right HUD button rows --
+// -- Bottom-left HUD button rows --
 //
-// Row 1 (top: 10) lives partly in other modules:
-//   [Reset the Game (main.js)] [Sound reset (here)] [Tune (tuning.js)]
-// We position Sound reset to slot in between, so all of row 1 is aligned.
-//
-// Row 2 (top: 48): facilitator hint sounds.
-// Row 3 (top: 86): the wizard-of-oz Hold-to-Herd toggle.
+// Bottom row (bottom: 10) holds master volume and Tune (appended from
+// other modules into the shared flex container in topButtonRow.js).
+// Row 2 (bottom: 48): facilitator hint sounds, column stacked upward.
+// Row 3 (bottom: 200): the wizard-of-oz Hold-to-Herd toggle.
 
 import { playSfx, restartAudio } from './sound.js';
 import { setHerdMode } from './herdMode.js';
@@ -22,16 +20,16 @@ const BTN = {
   fontSize: '13px',
 };
 
-function makeRow(top, { column = false } = {}) {
+function makeRow(bottom, { column = false } = {}) {
   const row = document.createElement('div');
   Object.assign(row.style, {
     position: 'fixed',
-    top: `${top}px`,
-    right: '10px',
+    bottom: `${bottom}px`,
+    left: '10px',
     zIndex: '1000',
     display: 'flex',
     flexDirection: column ? 'column' : 'row',
-    alignItems: column ? 'flex-end' : 'stretch',
+    alignItems: column ? 'flex-start' : 'stretch',
     gap: '6px',
   });
   return row;

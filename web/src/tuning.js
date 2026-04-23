@@ -1,7 +1,7 @@
 import { SHEEP, INITIAL_TOOLS, TOOL_SIZES } from './config.js';
 import { spawnFlock } from './sheep.js';
 import { setToolCount } from './input.js';
-import { getTopButtonRow, getHudHost } from './topButtonRow.js';
+import { getTopButtonRow } from './topButtonRow.js';
 
 let panel = null;
 let visible = false;
@@ -142,7 +142,7 @@ export function initTuning() {
   // Panel
   panel = document.createElement('div');
   Object.assign(panel.style, {
-    position: 'fixed', top: '42px', right: '10px', zIndex: '1001',
+    position: 'fixed', bottom: '42px', left: '10px', zIndex: '10060',
     background: 'rgba(30,30,30,0.92)', color: '#ddd',
     padding: '12px 14px', borderRadius: '6px',
     fontFamily: 'monospace', fontSize: '12px',
@@ -229,7 +229,11 @@ export function initTuning() {
     }
   });
 
-  getHudHost().appendChild(panel);
+  // Mount to <body>, not #fullscreenApp. #fullscreenApp has position:fixed
+  // which creates a stacking context; nested z-index can't beat the camera
+  // panel (z-index 10050) which sits at the body level. Mounting here lets
+  // the panel's z-index: 10060 actually render above the camera preview.
+  document.body.appendChild(panel);
 }
 
 function buildSlider(param) {

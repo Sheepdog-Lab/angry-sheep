@@ -879,7 +879,7 @@ export function initMasterVolumeButton() {
 
   const popover = document.createElement('div');
   Object.assign(popover.style, {
-    position: 'fixed', top: '48px', right: '10px', zIndex: '1001',
+    position: 'fixed', bottom: '48px', left: '10px', zIndex: '1001',
     background: 'rgba(30,30,30,0.92)', color: '#ddd',
     padding: '10px 12px', borderRadius: '6px',
     fontFamily: 'monospace', fontSize: '12px',

@@ -81,8 +81,8 @@
     }
     .fullscreen-launch {
       position: fixed;
-      right: max(10px, env(safe-area-inset-right, 0px));
-      bottom: max(10px, env(safe-area-inset-bottom, 0px));
+      left: max(10px, env(safe-area-inset-left, 0px));
+      bottom: 360px;
       z-index: 10050;
       pointer-events: auto;
       touch-action: manipulation;
@@ -135,8 +135,8 @@
     .fullscreen-exit {
       display: none;
       position: fixed;
-      right: max(10px, env(safe-area-inset-right, 0px));
-      bottom: max(10px, env(safe-area-inset-bottom, 0px));
+      left: max(10px, env(safe-area-inset-left, 0px));
+      bottom: 360px;
       z-index: 10050;
       pointer-events: auto;
       touch-action: manipulation;
@@ -147,8 +147,8 @@
     }
     .recalibrate-button--windowed {
       position: fixed;
-      right: max(10px, env(safe-area-inset-right, 0px));
-      bottom: 46px;
+      left: max(10px, env(safe-area-inset-left, 0px));
+      bottom: 396px;
       z-index: 10050;
       pointer-events: auto;
     }
@@ -255,12 +255,13 @@
       transform: scaleX(-1) rotate(180deg) scaleY(-1);
       transform-origin: center center;
     }
-    /* Bottom stack: Table Projection (above) → Recalibrate → Full Screen — not transformed */
+    /* Bottom-left stack (above the facilitator HUD):
+       Table Projection → Recalibrate → Full Screen, bottom-up in that order. */
     .table-projection-button {
       display: block;
       position: fixed;
-      right: max(10px, env(safe-area-inset-right, 0px));
-      bottom: 82px;
+      left: max(10px, env(safe-area-inset-left, 0px));
+      bottom: 432px;
       z-index: 10001;
       pointer-events: auto;
     }
@@ -317,26 +318,6 @@
       border-color: #666;
       color: #e8e8e8;
     }
-    .calibration-key {
-      position: fixed;
-      left: 16px;
-      bottom: 52px;
-      z-index: 9999;
-      padding: 10px 12px;
-      border-radius: 8px;
-      background: rgba(0, 0, 0, 0.78);
-      color: #f0f0f0;
-      font: 12px/1.45 system-ui, -apple-system, sans-serif;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
-      max-width: min(280px, 36vw);
-      pointer-events: none;
-      white-space: pre-line;
-    }
-    .calibration-key strong {
-      display: block;
-      margin-bottom: 6px;
-      font-size: 12px;
-    }
   </style>
 </head>
 <body>
@@ -369,14 +350,6 @@
   </button>
   <div id="fullscreenApp" class="fullscreen-app">
     <div id="gameStage" class="game-stage" aria-label="Angry Sheep game area"></div>
-    <div class="calibration-key" aria-label="Marker calibration controls">
-      <strong>Marker Calibration</strong>
-      C: capture next homography corner
-      Order: top, right,
-      bottom, left
-      X / Y: flip physical markers
-      Dots 1-4: target top/right/bottom/left
-    </div>
     <button
       type="button"
       id="exitFullscreenButton"
