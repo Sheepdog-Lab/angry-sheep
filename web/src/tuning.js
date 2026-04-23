@@ -1,7 +1,7 @@
 import { SHEEP, INITIAL_TOOLS, TOOL_SIZES } from './config.js';
 import { spawnFlock } from './sheep.js';
 import { setToolCount } from './input.js';
-import { getTopButtonRow } from './topButtonRow.js';
+import { getTopButtonRow, getHudHost } from './topButtonRow.js';
 
 let panel = null;
 let visible = false;
@@ -229,11 +229,21 @@ export function initTuning() {
     }
   });
 
-  // Mount to <body>, not #fullscreenApp. #fullscreenApp has position:fixed
-  // which creates a stacking context; nested z-index can't beat the camera
-  // panel (z-index 10050) which sits at the body level. Mounting here lets
-  // the panel's z-index: 10060 actually render above the camera preview.
-  document.body.appendChild(panel);
+  // The panel reparents based on fullscreen state:
+  //  - windowed: mount on <body> so z-index: 10060 beats the camera panel
+  //    (z-index 10050). #fullscreenApp creates a stacking context, so a
+  //    panel inside it cannot win against body-level siblings.
+  //  - native fullscreen: only descendants of the fullscreen element render,
+  //    so mount into #fullscreenApp (camera panel disappears anyway).
+  const hudHost = getHudHost();
+  const syncPanelHost = () => {
+    const fs = document.fullscreenElement || document.webkitFullscreenElement;
+    const target = fs && (fs === hudHost || fs.contains(hudHost)) ? hudHost : document.body;
+    if (panel.parentElement !== target) target.appendChild(panel);
+  };
+  syncPanelHost();
+  document.addEventListener('fullscreenchange', syncPanelHost);
+  document.addEventListener('webkitfullscreenchange', syncPanelHost);
 }
 
 function buildSlider(param) {
