@@ -4,7 +4,7 @@ import { getTopButtonRow, getHudHost } from './topButtonRow.js';
 
 const TRACKS = [
   { id: 'farm',  label: 'Farm ambience',   src: '/farm-sound.mp3',  defaultVol: 1.0, gain: 2.0 },
-  { id: 'grass', label: 'Grass rustling',   src: '/grass-rustled.mp3', defaultVol: 0.10 },
+  { id: 'grass', label: 'Grass rustling',   src: '/grass-rustled.mp3', defaultVol: 0.10, defaultMuted: true },
   { id: 'kids',  label: 'Kids music',       src: '/bg-kids-music.mp3', defaultVol: 0.05 },
 ];
 
@@ -13,9 +13,9 @@ const SFX_DEFS = [
   { id: 'smallWin',   label: 'Sheep captured',     src: '/sfx-small-win.mp3',    defaultVol: 0.30 },
   { id: 'kidsLaugh',  label: 'Kids laughing',      src: '/sfx-kids-laughing.mp3', defaultVol: 0.25 },
   { id: 'trumpet',    label: 'Trumpet',            src: '/sfx-trumpet.mp3',      defaultVol: 0.40 },
-  { id: 'grassHint',  label: 'Grass hint',         src: '/sfx-grass-hint.mp3',   defaultVol: 0.30 },
-  { id: 'encourageHint', label: 'Encourage hint',  src: '/sfx-encourage-hint.mp3', defaultVol: 0.30 },
-  { id: 'groomingHint',  label: 'Grooming hint',   src: '/sfx-grooming-hint.mp3', defaultVol: 0.30 },
+  { id: 'grassHint',  label: 'Grass hint',         src: '/sfx-grass-hint.mp3',   defaultVol: 0.12 },
+  { id: 'encourageHint', label: 'Encourage hint',  src: '/sfx-encourage-hint.mp3', defaultVol: 0.12 },
+  { id: 'groomingHint',  label: 'Grooming hint',   src: '/sfx-grooming-hint.mp3', defaultVol: 0.15 },
 ];
 
 /** SFX that play together share a combined TEST button. */
@@ -26,7 +26,7 @@ const SFX_GROUPS = [
 /** SFX pools — each play picks a random clip from the set. */
 const SFX_POOL_DEFS = [
   {
-    id: 'kidVoice', label: 'Kind words', defaultVol: 0.50,
+    id: 'kidVoice', label: 'Kind words', defaultVol: 0.12,
     srcs: [
       '/sfx-kid-voice-1.mp3', '/sfx-kid-voice-2.mp3',
     ],
@@ -37,7 +37,10 @@ const SFX_POOL_DEFS = [
 const EAT_GRASS = { id: 'eatGrass', label: 'Eat grass', src: '/sfx-eat-grass.mp3', defaultVol: 0.05 };
 
 /** Bristling loop — plays while any sheep is being groomed with the comb. */
-const BRISTLING = { id: 'bristling', label: 'Brush bristling', src: '/sfx-bristling.mp3', defaultVol: 1.0 };
+// `gain` > 1 routes the loop through a Web Audio GainNode so it can exceed the
+// HTMLAudioElement 1.0 volume ceiling. Slider stays 0–100%; actual output is
+// slider * gain, so bristling at 100% plays at 300% loudness.
+const BRISTLING = { id: 'bristling', label: 'Brush bristling', src: '/sfx-bristling.mp3', defaultVol: 1.0, gain: 12.0 };
 
 const STORAGE_KEY = 'angry-sheep-sound';
 
@@ -57,6 +60,9 @@ let bristlingAudio = null;
 let bristlingVolume = BRISTLING.defaultVol;
 let bristlingMuted = false;
 let bristlingPlaying = false;
+/** GainNode for bristling when BRISTLING.gain > 1.0 (boosts past HTMLAudio's 1.0 ceiling). */
+let bristlingGainNode = null;
+const BRISTLING_MAX_GAIN = BRISTLING.gain ?? 1.0;
 let muted = false;
 let playing = false;
 let masterVolume = 1.0;
@@ -105,7 +111,7 @@ function initPlayers() {
     audio.loop = true;
     audio.preload = 'auto';
     const volume = saved[track.id] ?? track.defaultVol;
-    const trackMuted = saved[track.id + '_m'] ?? false;
+    const trackMuted = saved[track.id + '_m'] ?? track.defaultMuted ?? false;
 
     let gainNode = null;
     const maxGain = track.gain ?? 1.0;
@@ -155,13 +161,24 @@ function initPlayers() {
   eatGrassAudio.preload = 'auto';
   eatGrassAudio.volume = 0;
 
-  // Bristling singleton loop
+  // Bristling singleton loop — route through GainNode when gain > 1 so we can
+  // exceed the HTMLAudio 1.0 cap.
   bristlingVolume = saved['sfx_' + BRISTLING.id] ?? BRISTLING.defaultVol;
   bristlingMuted = saved['sfx_' + BRISTLING.id + '_m'] ?? false;
   bristlingAudio = new Audio(BRISTLING.src);
   bristlingAudio.loop = true;
   bristlingAudio.preload = 'auto';
-  bristlingAudio.volume = 0;
+  if (BRISTLING_MAX_GAIN > 1.0) {
+    if (!audioCtx) audioCtx = new AudioContext();
+    const source = audioCtx.createMediaElementSource(bristlingAudio);
+    bristlingGainNode = audioCtx.createGain();
+    bristlingGainNode.gain.value = 0;
+    source.connect(bristlingGainNode);
+    bristlingGainNode.connect(audioCtx.destination);
+    bristlingAudio.volume = 1;
+  } else {
+    bristlingAudio.volume = 0;
+  }
 
   // Register gesture listeners early so we never miss the first user click.
   const onGesture = () => {
@@ -193,7 +210,15 @@ function applyVolumes() {
     eatGrassAudio.volume = eatGrassVolume * masterVolume;
   }
   if (bristlingPlaying && bristlingAudio) {
-    bristlingAudio.volume = bristlingVolume * masterVolume;
+    setBristlingOutputGain(bristlingVolume * masterVolume);
+  }
+}
+
+function setBristlingOutputGain(gain) {
+  if (bristlingGainNode) {
+    bristlingGainNode.gain.value = gain * BRISTLING_MAX_GAIN;
+  } else if (bristlingAudio) {
+    bristlingAudio.volume = Math.min(1, gain);
   }
 }
 
@@ -269,7 +294,7 @@ export function setBristlingActive(active) {
     return;
   }
   if (active && !bristlingPlaying) {
-    bristlingAudio.volume = bristlingVolume * masterVolume;
+    setBristlingOutputGain(bristlingVolume * masterVolume);
     bristlingAudio.play().catch(() => {});
     bristlingPlaying = true;
   } else if (!active && bristlingPlaying) {
@@ -358,10 +383,11 @@ function resetToDefaults() {
   let idx = 0;
   for (const track of TRACKS) {
     const p = players.get(track.id);
+    const defaultMuted = track.defaultMuted ?? false;
     p.volume = track.defaultVol;
-    p.muted = false;
+    p.muted = defaultMuted;
     uiRows[idx].setVolume(track.defaultVol);
-    uiRows[idx].setMuted(false);
+    uiRows[idx].setMuted(defaultMuted);
     idx++;
   }
 
@@ -376,7 +402,7 @@ function resetToDefaults() {
   // bristling
   bristlingVolume = BRISTLING.defaultVol;
   bristlingMuted = false;
-  if (bristlingAudio && bristlingPlaying) bristlingAudio.volume = bristlingVolume;
+  if (bristlingAudio && bristlingPlaying) setBristlingOutputGain(bristlingVolume * masterVolume);
   uiRows[idx].setVolume(BRISTLING.defaultVol);
   uiRows[idx].setMuted(false);
   idx++;
@@ -416,11 +442,10 @@ function resetToDefaults() {
 export function initSoundPanel() {
   initPlayers();
 
-  // Toggle button
+  // Toggle button — lives in the shared bottom-left row with Tune / master volume.
   const toggle = document.createElement('button');
   toggle.textContent = 'Sound';
   Object.assign(toggle.style, {
-    position: 'fixed', top: '10px', right: '80px', zIndex: '1000',
     padding: '6px 14px', background: '#333', color: '#fff',
     border: '1px solid #666', borderRadius: '4px', cursor: 'pointer',
     fontFamily: 'monospace', fontSize: '13px',
@@ -437,12 +462,12 @@ export function initSoundPanel() {
       panel.style.display = 'none';
     }
   });
-  document.body.appendChild(toggle);
+  getTopButtonRow().appendChild(toggle);
 
-  // Panel
+  // Panel — matches the Tune panel chrome, anchored bottom-left, opens upward.
   panel = document.createElement('div');
   Object.assign(panel.style, {
-    position: 'fixed', top: '42px', right: '80px', zIndex: '999',
+    position: 'fixed', bottom: '42px', left: '10px', zIndex: '10060',
     background: 'rgba(30,30,30,0.92)', color: '#ddd',
     padding: '12px 14px', borderRadius: '6px',
     fontFamily: 'monospace', fontSize: '12px',
@@ -616,7 +641,7 @@ export function initSoundPanel() {
       isMuted: bristlingMuted,
       onVolume(val) {
         bristlingVolume = val;
-        if (bristlingAudio && bristlingPlaying) bristlingAudio.volume = val * masterVolume;
+        if (bristlingAudio && bristlingPlaying) setBristlingOutputGain(val * masterVolume);
         saveSettings();
       },
       onMute(m) {
@@ -747,7 +772,18 @@ export function initSoundPanel() {
     }
   });
 
-  document.body.appendChild(panel);
+  // Mount on <body> so z-index: 10060 beats the camera panel (10050). In
+  // native fullscreen, only descendants of the fullscreen element render,
+  // so reparent into #fullscreenApp while fullscreen is active.
+  const hudHost = getHudHost();
+  const syncPanelHost = () => {
+    const fs = document.fullscreenElement || document.webkitFullscreenElement;
+    const target = fs && (fs === hudHost || fs.contains(hudHost)) ? hudHost : document.body;
+    if (panel.parentElement !== target) target.appendChild(panel);
+  };
+  syncPanelHost();
+  document.addEventListener('fullscreenchange', syncPanelHost);
+  document.addEventListener('webkitfullscreenchange', syncPanelHost);
 }
 
 // -- UI helpers --

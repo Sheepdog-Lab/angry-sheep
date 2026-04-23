@@ -58,7 +58,7 @@ import {
   drawTerrainAmbientGrass,
   updateGrassSheepInteraction,
 } from './terrainGrass.js';
-import { initSound, fadeAudio, setEatGrassActive, setBristlingActive, initMasterVolumeButton } from './sound.js';
+import { initSound, fadeAudio, setEatGrassActive, setBristlingActive, initMasterVolumeButton, initSoundPanel } from './sound.js';
 import { initHintButtons } from './hintButtons.js';
 import { getTopButtonRow, getBelowHerdColumn } from './topButtonRow.js';
 import { initTableProjection } from './tableProjection.js';
@@ -239,8 +239,9 @@ new p5((p) => {
     initResetButton();          // Red    (top of below-herd column)
     initDemoVictoryButton();    // Yellow (middle of below-herd column)
     initHintButtons();          // Blue   (bottom of below-herd column) + rows 2 + 3
-    initMasterVolumeButton();   // top row: speaker / master volume popover
-    initTuning();               // top row: rightmost Tune
+    initMasterVolumeButton();   // bottom row: speaker / master volume popover
+    initSoundPanel();           // bottom row: full per-track sound panel
+    initTuning();               // bottom row: Tune
     connectMarkerStream();
 
     notifyViewportChange = () => {
