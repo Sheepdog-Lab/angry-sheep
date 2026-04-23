@@ -1,4 +1,5 @@
 import { MARKER_STREAM } from './config.js';
+import { getObjectTypeFromMarker } from './physicalMode.js';
 import { getMarkerStreamState } from './markerStream.js';
 
 /** Distinct RGB per id — avoids p5 colorMode() changes that can flicker other layers */
@@ -10,13 +11,16 @@ function rgbForId(id) {
 }
 
 /**
- * Draw ArUco marker positions as dots above the playfield and black overscan mask.
+ * Draw ArUco marker positions as dots above the playfield (only ids that map to physical tools).
  */
 export function drawMarkerOverlay(p, canvasSize) {
-  const { connected, markers, rawMarkers, calibration } = getMarkerStreamState();
+  const { connected, markers, calibration } = getMarkerStreamState();
   const { dotRadiusPx, showLabels } = MARKER_STREAM;
 
-  const hasDots = markers.length > 0;
+  const mappedMarkers = markers.filter(
+    (m) => m && typeof m.id === 'number' && getObjectTypeFromMarker(m.id) != null,
+  );
+  const hasDots = mappedMarkers.length > 0;
 
   if (!connected && !hasDots) {
     p.push();
@@ -29,7 +33,7 @@ export function drawMarkerOverlay(p, canvasSize) {
     return;
   }
 
-  for (const m of markers) {
+  for (const m of mappedMarkers) {
     const id = m.id;
     const x = m.x * canvasSize;
     const y = m.y * canvasSize;
@@ -56,13 +60,11 @@ export function drawMarkerOverlay(p, canvasSize) {
   p.textSize(10);
   p.textAlign(p.RIGHT, p.TOP);
   const tag = connected
-    ? `ArUco: ${markers.length} marker(s)`
+    ? `ArUco: ${mappedMarkers.length} tool marker(s)`
     : hasDots
       ? 'ArUco: reconnecting…'
       : 'ArUco: …';
-  const rawIds = rawMarkers.map((m) => m.id).join(', ') || 'none';
   const debug =
-    `raw IDs ${rawIds}\n` +
     `calibration ${calibration?.active ? `${calibration.count}/4 ${calibration.nextCorner}` : calibration?.loaded ? 'loaded' : 'not set'}`;
   p.text(`${tag}\n${debug}`, canvasSize - 8, 8);
   p.pop();

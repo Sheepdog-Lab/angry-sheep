@@ -426,7 +426,8 @@ export const SHEEP = {
 export const MARKER_STREAM = {
   wsUrl: import.meta.env.VITE_MARKER_WS_URL || 'ws://127.0.0.1:8765',
   dotRadiusPx: 10,
-  showLabels: true,
+  /** When false, ArUco overlay dots have no id text (digital tools still show ids in tools.js). */
+  showLabels: false,
   /**
    * null = accept any detected marker id so debug overlays can show everything.
    * Physical-mode object mapping still decides which IDs become game objects.

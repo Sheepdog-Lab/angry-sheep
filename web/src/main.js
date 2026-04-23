@@ -46,7 +46,6 @@ import * as Session from './session.js';
 import { initTuning } from './tuning.js';
 import { connectMarkerStream, getMarkerStreamState } from './markerStream.js';
 import { getMarkerCalibration, initMarkerCalibration } from './markerCalibration.js';
-import { drawMarkerOverlay } from './markerOverlay.js';
 import { initCameraSwitcher } from './cameraSelect.js';
 import { getGameStageSize, initFullscreenControls } from './fullscreen.js';
 import { getGameMode, initGameMode } from './gameMode.js';
@@ -344,12 +343,6 @@ new p5((p) => {
       drawCalibrationCircleTargets(p, canvasSize);
     }
 
-    // Physical ArUco markers stay visible even when calibration moves them
-    // into the black overscan area around the play circle.
-    if (phase !== 'win' && gameMode === 'physical') {
-      drawMarkerOverlay(p, canvasSize);
-    }
-
     // Session overlay (intro, hints, win, reset fade)
     Session.drawOverlay(p, canvasSize);
 
@@ -364,7 +357,7 @@ new p5((p) => {
     p.textSize(11);
     p.textAlign(p.LEFT, p.TOP);
     p.text(
-      `Mode: ${gameMode}  |  markers: ${markerState.markers.length}  |  raw: ${markerState.rawMarkers.map((m) => m.id).join(', ') || 'none'}${gameMode === 'physical' ? `  |  flipX: ${markerCalibration.flipX} flipY: ${markerCalibration.flipY}` : ''}`,
+      `Mode: ${gameMode}  |  markers: ${markerState.markers.length}${gameMode === 'physical' ? `  |  flipX: ${markerCalibration.flipX} flipY: ${markerCalibration.flipY}` : ''}`,
       12,
       12,
     );
