@@ -15,6 +15,7 @@ const SFX_DEFS = [
   { id: 'trumpet',    label: 'Trumpet',            src: '/sfx-trumpet.mp3',      defaultVol: 0.40 },
   { id: 'grassHint',  label: 'Grass hint',         src: '/sfx-grass-hint.mp3',   defaultVol: 0.30 },
   { id: 'encourageHint', label: 'Encourage hint',  src: '/sfx-encourage-hint.mp3', defaultVol: 0.30 },
+  { id: 'groomingHint',  label: 'Grooming hint',   src: '/sfx-grooming-hint.mp3', defaultVol: 0.30 },
 ];
 
 /** SFX that play together share a combined TEST button. */
@@ -27,14 +28,16 @@ const SFX_POOL_DEFS = [
   {
     id: 'kidVoice', label: 'Kind words', defaultVol: 0.50,
     srcs: [
-      '/sfx-kid-voice-1.mp3', '/sfx-kid-voice-2.mp3', '/sfx-kid-voice-3.mp3',
-      '/sfx-kid-voice-4.mp3', '/sfx-kid-voice-5.mp3', '/sfx-kid-voice-6.mp3',
+      '/sfx-kid-voice-1.mp3', '/sfx-kid-voice-2.mp3',
     ],
   },
 ];
 
 /** Eat-grass is a singleton loop — only one instance plays at a time. */
 const EAT_GRASS = { id: 'eatGrass', label: 'Eat grass', src: '/sfx-eat-grass.mp3', defaultVol: 0.05 };
+
+/** Bristling loop — plays while any sheep is being groomed with the comb. */
+const BRISTLING = { id: 'bristling', label: 'Brush bristling', src: '/sfx-bristling.mp3', defaultVol: 1.0 };
 
 const STORAGE_KEY = 'angry-sheep-sound';
 
@@ -49,6 +52,11 @@ let eatGrassAudio = null;
 let eatGrassVolume = 0.5;
 let eatGrassMuted = false;
 let eatGrassPlaying = false;
+/** Single looping bristling audio. */
+let bristlingAudio = null;
+let bristlingVolume = BRISTLING.defaultVol;
+let bristlingMuted = false;
+let bristlingPlaying = false;
 let muted = false;
 let playing = false;
 let masterVolume = 1.0;
@@ -73,6 +81,8 @@ function saveSettings() {
   }
   data['sfx_' + EAT_GRASS.id] = eatGrassVolume;
   data['sfx_' + EAT_GRASS.id + '_m'] = eatGrassMuted;
+  data['sfx_' + BRISTLING.id] = bristlingVolume;
+  data['sfx_' + BRISTLING.id + '_m'] = bristlingMuted;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
@@ -145,6 +155,14 @@ function initPlayers() {
   eatGrassAudio.preload = 'auto';
   eatGrassAudio.volume = 0;
 
+  // Bristling singleton loop
+  bristlingVolume = saved['sfx_' + BRISTLING.id] ?? BRISTLING.defaultVol;
+  bristlingMuted = saved['sfx_' + BRISTLING.id + '_m'] ?? false;
+  bristlingAudio = new Audio(BRISTLING.src);
+  bristlingAudio.loop = true;
+  bristlingAudio.preload = 'auto';
+  bristlingAudio.volume = 0;
+
   // Register gesture listeners early so we never miss the first user click.
   const onGesture = () => {
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
@@ -173,6 +191,9 @@ function applyVolumes() {
   }
   if (eatGrassPlaying && eatGrassAudio) {
     eatGrassAudio.volume = eatGrassVolume * masterVolume;
+  }
+  if (bristlingPlaying && bristlingAudio) {
+    bristlingAudio.volume = bristlingVolume * masterVolume;
   }
 }
 
@@ -234,6 +255,30 @@ export function setEatGrassActive(active) {
   }
 }
 
+/**
+ * Turn the bristling loop on or off. Only one track plays regardless of
+ * how many sheep are being groomed.
+ * @param {boolean} active
+ */
+export function setBristlingActive(active) {
+  if ((muted || bristlingMuted) || !bristlingAudio) {
+    if (bristlingPlaying) {
+      bristlingAudio?.pause();
+      bristlingPlaying = false;
+    }
+    return;
+  }
+  if (active && !bristlingPlaying) {
+    bristlingAudio.volume = bristlingVolume * masterVolume;
+    bristlingAudio.play().catch(() => {});
+    bristlingPlaying = true;
+  } else if (!active && bristlingPlaying) {
+    bristlingAudio.pause();
+    bristlingAudio.currentTime = 0;
+    bristlingPlaying = false;
+  }
+}
+
 // -- SFX --
 
 /**
@@ -279,6 +324,10 @@ export function restartAudio() {
     try { eatGrassAudio.pause(); eatGrassAudio.currentTime = 0; } catch {}
     eatGrassAudio.play().catch(() => {});
   }
+  if (bristlingPlaying && bristlingAudio) {
+    try { bristlingAudio.pause(); bristlingAudio.currentTime = 0; } catch {}
+    bristlingAudio.play().catch(() => {});
+  }
   applyVolumes();
 }
 
@@ -321,6 +370,14 @@ function resetToDefaults() {
   eatGrassMuted = false;
   if (eatGrassAudio && eatGrassPlaying) eatGrassAudio.volume = eatGrassVolume;
   uiRows[idx].setVolume(EAT_GRASS.defaultVol);
+  uiRows[idx].setMuted(false);
+  idx++;
+
+  // bristling
+  bristlingVolume = BRISTLING.defaultVol;
+  bristlingMuted = false;
+  if (bristlingAudio && bristlingPlaying) bristlingAudio.volume = bristlingVolume;
+  uiRows[idx].setVolume(BRISTLING.defaultVol);
   uiRows[idx].setMuted(false);
   idx++;
 
@@ -454,6 +511,10 @@ export function initSoundPanel() {
       eatGrassAudio?.pause();
       eatGrassPlaying = false;
     }
+    if (muted && bristlingPlaying) {
+      bristlingAudio?.pause();
+      bristlingPlaying = false;
+    }
     saveSettings();
   });
 
@@ -538,6 +599,37 @@ export function initSoundPanel() {
       },
       onTest(vol) {
         const a = new Audio(EAT_GRASS.src);
+        a.volume = vol * masterVolume;
+        a.play().catch(() => {});
+        setTimeout(() => { a.pause(); a.currentTime = 0; }, 3000);
+      },
+    });
+    uiRows.push({ setVolume, setMuted });
+    panel.appendChild(el);
+  }
+
+  // Bristling
+  {
+    const { el, setVolume, setMuted } = buildTrackRow({
+      label: BRISTLING.label,
+      volume: bristlingVolume,
+      isMuted: bristlingMuted,
+      onVolume(val) {
+        bristlingVolume = val;
+        if (bristlingAudio && bristlingPlaying) bristlingAudio.volume = val * masterVolume;
+        saveSettings();
+      },
+      onMute(m) {
+        bristlingMuted = m;
+        if (m && bristlingPlaying) {
+          bristlingAudio?.pause();
+          bristlingAudio.currentTime = 0;
+          bristlingPlaying = false;
+        }
+        saveSettings();
+      },
+      onTest(vol) {
+        const a = new Audio(BRISTLING.src);
         a.volume = vol * masterVolume;
         a.play().catch(() => {});
         setTimeout(() => { a.pause(); a.currentTime = 0; }, 3000);

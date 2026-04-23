@@ -65,6 +65,10 @@ export function isAnySheepEating() {
   return flock.some((s) => s._isEating);
 }
 
+export function isAnySheepBeingGroomed() {
+  return flock.some((s) => s.beingGroomed);
+}
+
 /**
  * Step the simulation forward one frame.
  * @param {object} input - full shared contract state { tools, voice, pet }
@@ -193,6 +197,7 @@ function makeSheep(x, y, stress, opts = {}) {
     stress: stress,            // 0 = calm, >= crisisThreshold = crisis
     dogPushCount: 0,           // consecutive dog pushes while in crisis (for splitting)
     beingPetted: false,        // set each frame by de-escalation check
+    beingGroomed: false,       // true only when a comb overlaps this sheep
     /** @type {null | 'pet' | 'grass' | 'voice'} active calming feedback (set in applyDeescalation) */
     _calmingKind: null,
     /** One-shot pet/feed delight animation (frames remaining); see interactionFeedback in config */
@@ -927,6 +932,19 @@ function applyToolReactions(sheep, tools) {
 
 function applyDeescalation(sheep, tools, voice, pet) {
   sheep._calmingKind = null;
+
+  // Detect comb contact every frame, even for calm sheep, so the bristling
+  // loop plays whenever the brush is on a sheep (not only when stressed).
+  sheep.beingGroomed = false;
+  for (const tool of tools) {
+    if (tool.type !== 'comb') continue;
+    const dx = sheep.x - tool.x;
+    const dy = sheep.y - tool.y;
+    if (dx * dx + dy * dy < SHEEP.petRadius * SHEEP.petRadius) {
+      sheep.beingGroomed = true;
+      break;
+    }
+  }
 
   if (sheep.stress <= 0) {
     sheep.beingPetted = false;

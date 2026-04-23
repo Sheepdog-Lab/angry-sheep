@@ -41,6 +41,7 @@ import {
   setCalmingCueSprites,
   getFlock,
   isAnySheepEating,
+  isAnySheepBeingGroomed,
 } from './sheep.js';
 import * as Session from './session.js';
 import { initTuning } from './tuning.js';
@@ -57,7 +58,7 @@ import {
   drawTerrainAmbientGrass,
   updateGrassSheepInteraction,
 } from './terrainGrass.js';
-import { initSound, fadeAudio, setEatGrassActive, initMasterVolumeButton } from './sound.js';
+import { initSound, fadeAudio, setEatGrassActive, setBristlingActive, initMasterVolumeButton } from './sound.js';
 import { initHintButtons } from './hintButtons.js';
 import { getTopButtonRow } from './topButtonRow.js';
 import { initTableProjection } from './tableProjection.js';
@@ -117,6 +118,23 @@ function initResetButton() {
   });
   resetBtn.addEventListener('click', () => Session.resetSession());
   getTopButtonRow().appendChild(resetBtn);
+}
+
+function initDemoVictoryButton() {
+  const btn = document.createElement('button');
+  btn.textContent = 'Demo Victory';
+  Object.assign(btn.style, {
+    padding: '6px 14px',
+    background: '#b88a00',
+    color: '#fff',
+    border: '1px solid #e0b020',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    fontFamily: 'monospace',
+  });
+  btn.addEventListener('click', () => Session.forceVictory());
+  getTopButtonRow().appendChild(btn);
 }
 
 new p5((p) => {
@@ -216,9 +234,10 @@ new p5((p) => {
     // Order matters: each of these appends one button to the shared
     // top-right row in left-to-right visual order.
     initResetButton();          // 1st  → leftmost  (Reset the Game)
-    initHintButtons();          // 2nd              (Reset the Sound), plus rows 2 + 3
-    initMasterVolumeButton();   // 3rd              (speaker / master volume popover)
-    initTuning();               // 4th  → rightmost (Tune)
+    initDemoVictoryButton();    // 2nd              (Demo Victory — promo button)
+    initHintButtons();          // 3rd              (Reset the Sound), plus rows 2 + 3
+    initMasterVolumeButton();   // 4th              (speaker / master volume popover)
+    initTuning();               // 5th  → rightmost (Tune)
     connectMarkerStream();
 
     notifyViewportChange = () => {
@@ -283,8 +302,10 @@ new p5((p) => {
       tickIdleHerd(state.tools, getFlock());
       updateFlock(state);
       setEatGrassActive(isAnySheepEating());
+      setBristlingActive(isAnySheepBeingGroomed());
     } else {
       setEatGrassActive(false);
+      setBristlingActive(false);
     }
 
     // -- Render --

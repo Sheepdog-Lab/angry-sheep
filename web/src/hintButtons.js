@@ -22,7 +22,7 @@ const BTN = {
   fontSize: '13px',
 };
 
-function makeRow(top) {
+function makeRow(top, { column = false } = {}) {
   const row = document.createElement('div');
   Object.assign(row.style, {
     position: 'fixed',
@@ -30,6 +30,8 @@ function makeRow(top) {
     right: '10px',
     zIndex: '1000',
     display: 'flex',
+    flexDirection: column ? 'column' : 'row',
+    alignItems: column ? 'flex-end' : 'stretch',
     gap: '6px',
   });
   return row;
@@ -52,8 +54,8 @@ export function initHintButtons() {
   });
   getTopButtonRow().appendChild(soundResetBtn);
 
-  // -- Row 2: facilitator hint sounds --
-  const hintRow = makeRow(48);
+  // -- Row 2: facilitator hint sounds (stacked vertically) --
+  const hintRow = makeRow(48, { column: true });
   const makeHint = (label, onClick) => {
     const b = document.createElement('button');
     b.textContent = label;
@@ -66,6 +68,7 @@ export function initHintButtons() {
   };
   makeHint('Grass hint (G)',    () => playSfx('grassHint'));
   makeHint('Speaking hint (S)', () => playSfx('encourageHint'));
+  makeHint('Grooming hint (B)', () => playSfx('groomingHint'));
   makeHint('Kind words (K)',    () => playSfx('kidVoice'));
   getHudHost().appendChild(hintRow);
 
@@ -74,7 +77,8 @@ export function initHintButtons() {
   // sheepdog contact in sheep.js calms instead of stressing. Auto-releases
   // on mouseup, mouseleave (drag-off safety), touchend, touchcancel,
   // or window blur (in case the keyup never reaches us).
-  const herdRow = makeRow(86);
+  // Sits below the stacked hint column (4 buttons × ~30px + gaps ≈ 138px).
+  const herdRow = makeRow(200);
   const herdBtn = document.createElement('button');
   herdBtn.textContent = 'Hold to Herd (H)';
   Object.assign(herdBtn.style, BTN, {
@@ -130,6 +134,8 @@ export function initHintButtons() {
       playSfx('encourageHint');
     } else if (k === 'k') {
       playSfx('kidVoice');
+    } else if (k === 'b') {
+      playSfx('groomingHint');
     } else if (k === 'h') {
       keyHeld = true;
       refreshHerd();

@@ -67,6 +67,24 @@ export function resetSession() {
   frameCounter = 0;
 }
 
+/**
+ * Demo helper: instantly trigger the full victory scene by marking every
+ * sheep captured. Next update() tick takes the normal win path (mute kids
+ * music, play trumpet + kids laughing, render drawWin with confetti /
+ * sparkles / banner), so the demo matches a real completion exactly.
+ * Fast-forwards the intro if needed so the capture check actually runs.
+ */
+export function forceVictory() {
+  if (phase === 'win' || phase === 'reset') return;
+  if (phase === 'intro') {
+    phase = 'playing';
+    frameCounter = 0;
+  }
+  const flock = getFlock();
+  if (flock.length === 0) return;
+  for (const s of flock) s.captured = true;
+}
+
 export function update() {
   frameCounter++;
 
