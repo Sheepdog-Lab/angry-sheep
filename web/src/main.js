@@ -60,7 +60,7 @@ import {
 } from './terrainGrass.js';
 import { initSound, fadeAudio, setEatGrassActive, setBristlingActive, initMasterVolumeButton } from './sound.js';
 import { initHintButtons } from './hintButtons.js';
-import { getTopButtonRow } from './topButtonRow.js';
+import { getTopButtonRow, getBelowHerdColumn } from './topButtonRow.js';
 import { initTableProjection } from './tableProjection.js';
 import './browserFramePump.js';
 
@@ -117,7 +117,7 @@ function initResetButton() {
     fontFamily: 'monospace',
   });
   resetBtn.addEventListener('click', () => Session.resetSession());
-  getTopButtonRow().appendChild(resetBtn);
+  getBelowHerdColumn().appendChild(resetBtn);
 }
 
 function initDemoVictoryButton() {
@@ -134,7 +134,7 @@ function initDemoVictoryButton() {
     fontFamily: 'monospace',
   });
   btn.addEventListener('click', () => Session.forceVictory());
-  getTopButtonRow().appendChild(btn);
+  getBelowHerdColumn().appendChild(btn);
 }
 
 new p5((p) => {
@@ -231,13 +231,16 @@ new p5((p) => {
     initTerrainAmbientGrass(canvasSize);
     Input.init(p, canvasSize);
     initSound();
-    // Order matters: each of these appends one button to the shared
-    // top-right row in left-to-right visual order.
-    initResetButton();          // 1st  → leftmost  (Reset the Game)
-    initDemoVictoryButton();    // 2nd              (Demo Victory — promo button)
-    initHintButtons();          // 3rd              (Reset the Sound), plus rows 2 + 3
-    initMasterVolumeButton();   // 4th              (speaker / master volume popover)
-    initTuning();               // 5th  → rightmost (Tune)
+    // Order matters for the top-right row (master volume + Tune).
+    // The Reset-the-Game / Demo-Victory / Reset-the-Sound buttons mount
+    // into a separate vertical column below the green Hold-to-Herd
+    // button — see getBelowHerdColumn() in topButtonRow.js. They stack
+    // top → bottom in append order: Red, Yellow, Blue.
+    initResetButton();          // Red    (top of below-herd column)
+    initDemoVictoryButton();    // Yellow (middle of below-herd column)
+    initHintButtons();          // Blue   (bottom of below-herd column) + rows 2 + 3
+    initMasterVolumeButton();   // top row: speaker / master volume popover
+    initTuning();               // top row: rightmost Tune
     connectMarkerStream();
 
     notifyViewportChange = () => {

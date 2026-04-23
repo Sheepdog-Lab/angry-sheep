@@ -9,7 +9,7 @@
 
 import { playSfx, restartAudio } from './sound.js';
 import { setHerdMode } from './herdMode.js';
-import { getTopButtonRow, getHudHost } from './topButtonRow.js';
+import { getBelowHerdColumn, getHudHost } from './topButtonRow.js';
 
 const BTN = {
   padding: '6px 14px',
@@ -38,10 +38,9 @@ function makeRow(top, { column = false } = {}) {
 }
 
 export function initHintButtons() {
-  // -- Row 1: Reset the Sound (mounted into the shared top button row) --
-  // The shared flex container in topButtonRow.js auto-aligns this with
-  // Reset the Game (mounted by main.js) and Tune (mounted by tuning.js).
-  // Visual order is determined by append order — see main.js setup().
+  // -- Reset the Sound (mounted into the below-herd column) --
+  // Stacks under Reset the Game and Demo Victory (appended earlier
+  // from main.js). See getBelowHerdColumn() in topButtonRow.js.
   const soundResetBtn = document.createElement('button');
   soundResetBtn.textContent = 'Reset the Sound';
   Object.assign(soundResetBtn.style, BTN, {
@@ -52,7 +51,7 @@ export function initHintButtons() {
     e.stopPropagation();
     restartAudio();
   });
-  getTopButtonRow().appendChild(soundResetBtn);
+  getBelowHerdColumn().appendChild(soundResetBtn);
 
   // -- Row 2: facilitator hint sounds (stacked vertically) --
   const hintRow = makeRow(48, { column: true });

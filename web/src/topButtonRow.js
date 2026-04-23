@@ -36,3 +36,26 @@ export function getTopButtonRow() {
   getHudHost().appendChild(row);
   return row;
 }
+
+// Vertical column that sits directly under the green Hold-to-Herd button
+// (mounted at top: 200, ~30px tall). The facilitator test buttons
+// (Reset the Game, Demo Victory, Reset the Sound) stack here in append
+// order: first append → topmost, last append → bottom.
+let belowHerdColumn = null;
+
+export function getBelowHerdColumn() {
+  if (belowHerdColumn) return belowHerdColumn;
+  belowHerdColumn = document.createElement('div');
+  Object.assign(belowHerdColumn.style, {
+    position: 'fixed',
+    top: '244px',
+    right: '10px',
+    zIndex: '1000',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: '6px',
+  });
+  getHudHost().appendChild(belowHerdColumn);
+  return belowHerdColumn;
+}
