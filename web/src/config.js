@@ -199,8 +199,8 @@ export const SHEEP = {
   // Tool interaction radii (normalized)
   dogFleeRadius: 0.10,      // sheep flee when sheepdog is within this range
   dogFleeForce: 0.004,
-  dogShovelHalfFlat: 0.09,  // half-width of flat shovel face (normalized)
-  dogShovelArmLen: 0.06,    // length of each 45° arm at the ends of the flat
+  dogShovelHalfFlat: 0.04,  // half-width of flat shovel face (normalized)
+  dogShovelArmLen: 0.035,   // length of each 45° arm at the ends of the flat
   // Long-range herding — gentle directional push in a cone in front of the dog,
   // so sheep start moving before the shovel ever touches them. Keeps the group
   // together instead of scattering one sheep at a time.
@@ -284,8 +284,8 @@ export const SHEEP = {
   stressPerPush: 0.15,      // stress added per sheepdog encounter
   herdCalmRate: 0.15,       // stress removed per sheepdog encounter while Herd mode is held
   crisisThreshold: 1.0,     // stress level that triggers crisis mode
-  crisisSpeedMult: 2.7,     // speed multiplier during crisis
-  crisisWanderJitter: 0.8,  // erratic movement jitter during crisis
+  crisisSpeedMult: 4.0,     // speed multiplier during crisis
+  crisisWanderJitter: 0.55, // erratic movement jitter during crisis
   // De-escalation
   grassCalmRate: 0.008,     // stress reduction per frame when grass is near a crisis sheep
   grassCalmRadius: 0.08,    // grass must be this close to calm

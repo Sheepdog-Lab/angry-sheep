@@ -19,7 +19,7 @@ const CATEGORIES = [
       { key: 'radius',         label: 'Size',           min: 0.008,  max: 0.04,  step: 0.001  },
       { key: 'stressPerPush',  label: 'Anger per push', min: 0.05,   max: 1.0,   step: 0.05   },
       { key: 'herdCalmRate',   label: 'Herd calm-rate', min: 0.05,   max: 1.0,   step: 0.05   },
-      { key: 'crisisSpeedMult', label: 'Crisis speed',  min: 1.0,    max: 3.0,   step: 0.1    },
+      { key: 'crisisSpeedMult', label: 'Crisis speed',  min: 1.0,    max: 5.0,   step: 0.1    },
     ],
   },
   {

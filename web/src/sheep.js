@@ -419,9 +419,13 @@ function applyNaturalWander(sheep) {
 }
 
 function applyCrisisWander(sheep) {
-  // Erratic, fast wandering
+  // Erratic, fast wandering. Re-jitter heading every ~5 frames so the sheep
+  // can actually run in a direction long enough for facing to track it,
+  // instead of whipping every frame.
   const sm = sheep.speedMult ?? 1;
-  sheep.wanderAngle += (Math.random() - 0.5) * SHEEP.crisisWanderJitter;
+  if (((sheep._tick | 0) + sheep.id) % 5 === 0) {
+    sheep.wanderAngle += (Math.random() - 0.5) * SHEEP.crisisWanderJitter;
+  }
   const spd = SHEEP.speed * SHEEP.crisisSpeedMult * sm;
   sheep.vx += Math.cos(sheep.wanderAngle) * spd * 0.4;
   sheep.vy += Math.sin(sheep.wanderAngle) * spd * 0.4;
@@ -1279,7 +1283,7 @@ function move(sheep) {
     sheep.facing = angleLerp(
       sheep.facing,
       target,
-      inPen ? 0.06 : inCrisis ? 0.25 : 0.1,
+      inPen ? 0.06 : inCrisis ? 0.35 : 0.1,
     );
   }
 
@@ -1461,13 +1465,15 @@ function drawSheepAngerIndicator(p, r, stressRatio) {
   if (stressRatio < 0.018) return;
   const a = Math.pow(Math.min(1, stressRatio), 0.88) * 255;
   const d = r * 1.08;
-  // Offset above the head (slightly past the sprite top) so the icon doesn’t touch the wool.
-  const gap = r * 0.2;
-  const headY = -r * 1.2 - gap;
+  // Offset above the head with extra clearance and a sideways shift, so the
+  // icon reads as a single horn rather than sitting on top of the wool.
+  const gap = r * 0.05;
+  const headY = -r * 1.1 - gap;
+  const headX = r * 1.35;
   p.push();
   p.imageMode(p.CENTER);
   p.tint(255, 255, 255, a);
-  p.image(angerIndicatorImg, 0, headY, d, d);
+  p.image(angerIndicatorImg, headX, headY, d, d);
   p.noTint();
   p.pop();
 }
@@ -1554,23 +1560,13 @@ function drawSheep(p, sheep, canvasSize) {
     if (inCrisis) {
       p.tint(255, 110, 95, 255);
     } else {
-      let tr = 255;
-      let tg;
-      let tb;
-      if (stressRatio < 0.5) {
-        const t = stressRatio * 2;
-        tg = Math.round(255 - t * 45);
-        tb = Math.round(255 - t * 70);
-      } else {
-        const t = (stressRatio - 0.5) * 2;
-        tg = Math.round(210 - t * 90);
-        tb = Math.round(185 - t * 115);
-      }
+      let tg = 255;
+      let tb = 255;
       if (happyBoost > 0.01) {
         tg = Math.min(255, Math.round(tg + happyBoost * 42));
         tb = Math.min(255, Math.round(tb + happyBoost * 58));
       }
-      p.tint(tr, tg, tb, 255);
+      p.tint(255, tg, tb, 255);
     }
     p.image(sheepSprite, 0, 0, size, size);
     if (!sheep.captured) {
