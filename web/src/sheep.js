@@ -489,8 +489,15 @@ function applyEdgeBounce(sheep) {
   const limit = TABLE_RADIUS - SHEEP.tableMargin;
 
   if (dist > limit && dist > 0.001) {
-    sheep.vx -= (dx / dist) * SHEEP.edgePushForce;
-    sheep.vy -= (dy / dist) * SHEEP.edgePushForce;
+    const ux = dx / dist;
+    const uy = dy / dist;
+    sheep.vx -= ux * SHEEP.edgePushForce;
+    sheep.vy -= uy * SHEEP.edgePushForce;
+
+    // Steer wander angle back toward the center with some spread so the
+    // sheep actually leaves the edge rather than sliding along it.
+    const inward = Math.atan2(-uy, -ux);
+    sheep.wanderAngle = inward + (Math.random() - 0.5) * Math.PI * 0.6;
   }
 }
 
