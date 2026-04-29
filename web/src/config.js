@@ -441,10 +441,12 @@ export const MARKER_STREAM = {
   /**
    * 0–1 blend toward each new sample each frame. Higher = snappier physical tools
    * (less “laggy” follow); lower = smoother but slower on the table. Use 1 for no smoothing.
+   * 0.5 absorbs single-frame position noise (e.g. JPEG artifacts causing wrong coords) without
+   * visible lag; raise toward 1 if live tracking feels sluggish.
    */
-  smoothAlpha: 1,
-  /** Hold detections longer before hiding them to reduce blinking */
-  holdMissFrames: 45,
+  smoothAlpha: 0.5,
+  /** Hold detections longer before hiding them to reduce blinking (~3 s at 30 fps) */
+  holdMissFrames: 90,
   /** Ignore only very large jumps to keep distant markers from vanishing */
   maxJumpPx: 260,
 };
