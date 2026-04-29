@@ -68,14 +68,17 @@ export function setCombSprite(img) {
  * @param {object} p - p5 instance
  * @param {Array} tools - array of { type, id, x, y, angle_deg }
  * @param {number} canvasSize
- * @param {number|null} hoveredId - id of tool under the mouse (gets highlight)
+ * @param {number|null|Set<number>} hoveredId - tool id(s) under pointers (highlight)
  */
 export function drawTools(p, tools, canvasSize, hoveredId, flock) {
   for (const tool of tools) {
     const px = tool.x * canvasSize;
     const py = tool.y * canvasSize;
     const color = TOOL_COLORS[tool.type] || '#ffffff';
-    const isHovered = tool.id === hoveredId;
+    const isHovered =
+      hoveredId instanceof Set
+        ? hoveredId.has(tool.id)
+        : tool.id === hoveredId;
 
     p.push();
     p.translate(px, py);

@@ -1,9 +1,13 @@
 import { PHYSICAL_MODE, SHEEP, TABLE_RADIUS, PEN, TOOL_SIZES } from './config.js';
+import { VICTORY_CELEBRATION } from './victoryCelebration.js';
 import { isInsidePen, isInGap, penEdgeInfo } from './pen.js';
-import { getDragId } from './input.js';
+import { isToolBeingDragged } from './input.js';
 import { playSfx } from './sound.js';
 import { isHerdActive } from './herdMode.js';
 import { isAutoHerdActive, getChosenSheepId } from './idleHerd.js';
+
+/** Max tiny sparkles per sheep (calming-style `drawSparkle`). */
+const SHEEP_VICTORY_SPARKLE_CAP = 5;
 
 // -- Flock state --
 let flock = [];
@@ -61,6 +65,22 @@ export function getFlock() {
   return flock;
 }
 
+/** Plain objects for WebSocket snapshot (host → guests). */
+export function getFlockSnapshot() {
+  return flock.map((s) => {
+    const o = {};
+    for (const k of Object.keys(s)) o[k] = s[k];
+    return o;
+  });
+}
+
+/** Replace local flock from host snapshot (guest clients). */
+export function replaceFlockFromSnapshot(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return;
+  flock = rows.map((r) => ({ ...r }));
+  nextSheepId = flock.reduce((m, s) => Math.max(m, Number(s.id) || 0), 0) + 1;
+}
+
 export function isAnySheepEating() {
   return flock.some((s) => s._isEating);
 }
@@ -71,7 +91,7 @@ export function isAnySheepBeingGroomed() {
 
 /**
  * Step the simulation forward one frame.
- * @param {object} input - full shared contract state { tools, voice, pet }
+ * @param {object} input - full shared contract state { tools, voice, pet } (`pet.points[]` normalized)
  */
 export function updateFlock(input) {
   const { tools, voice, pet } = input;
@@ -141,6 +161,25 @@ export function updateFlock(input) {
 export function drawFlock(p, canvasSize) {
   for (const sheep of flock) {
     drawSheep(p, sheep, canvasSize);
+  }
+}
+
+/** Snap normalized positions when victory begins so sheep stay visually inside the pen. */
+export function lockVictorySheepPositions() {
+  for (const sheep of flock) {
+    sheep._victoryLockX = sheep.x;
+    sheep._victoryLockY = sheep.y;
+  }
+}
+
+/**
+ * Victory-only: same top-down sheep as gameplay; locked pen positions + lively hop cycle.
+ * @param {number} winFrame frames since win began
+ */
+export function drawFlockVictoryCelebration(p, canvasSize, winFrame) {
+  for (const sheep of flock) {
+    if (!sheep.captured) continue;
+    drawSheep(p, sheep, canvasSize, { winFrame });
   }
 }
 
@@ -311,6 +350,24 @@ function applyPenSeparation(sheep) {
   }
 }
 
+/**
+ * Any petting pointer within `SHEEP.petRadius * radiusMul` of the sheep.
+ * @param {{ points?: Array<{ x: number; y: number }> }} pet
+ */
+function petPointerNearSheep(sheep, pet, radiusMul) {
+  const pts = pet?.points;
+  if (!pts || pts.length === 0) return false;
+  const r = SHEEP.petRadius * radiusMul;
+  const r2 = r * r;
+  for (let i = 0; i < pts.length; i++) {
+    const pt = pts[i];
+    const dx = sheep.x - pt.x;
+    const dy = sheep.y - pt.y;
+    if (dx * dx + dy * dy < r2) return true;
+  }
+  return false;
+}
+
 function tryWakeGrazer(sheep, tools, voice, pet) {
   if (!sheep.stationaryGrazer || sheep.grazerUnlocked) return;
 
@@ -320,13 +377,9 @@ function tryWakeGrazer(sheep, tools, voice, pet) {
     return;
   }
 
-  if (pet && pet.active) {
-    const dx = sheep.x - pet.x;
-    const dy = sheep.y - pet.y;
-    if (Math.sqrt(dx * dx + dy * dy) < SHEEP.petRadius * 1.15) {
-      sheep.grazerUnlocked = true;
-      return;
-    }
+  if (petPointerNearSheep(sheep, pet, 1.15)) {
+    sheep.grazerUnlocked = true;
+    return;
   }
 
   for (const tool of tools) {
@@ -905,7 +958,7 @@ function applyToolReactions(sheep, tools) {
       const nearNext = (dxProj * dxProj + dyProj * dyProj) < bcR * bcR;
       if (nearNow || nearNext) {
         // Actively dragged block angers the sheep, same as before.
-        if (tool.id === getDragId() && dist < SHEEP.blockDetectRadius && dist > 0.001) {
+        if (isToolBeingDragged(tool.id) && dist < SHEEP.blockDetectRadius && dist > 0.001) {
           sheep.stress = Math.min(
             sheep.stress + SHEEP.blockDragStressRate,
             SHEEP.crisisThreshold + 0.5,
@@ -1025,16 +1078,11 @@ function applyDeescalation(sheep, tools, voice, pet) {
     }
   }
 
-  // Petting: (1) digital pointer, or (2) physical / drag comb overlapping the sheep
+  // Petting: digital pointers (multi-touch / mouse) or comb tool on sheep
   sheep.beingPetted = false;
-  if (pet && pet.active) {
-    const dx = sheep.x - pet.x;
-    const dy = sheep.y - pet.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < SHEEP.petRadius) {
-      sheep.stress = Math.max(0, sheep.stress - SHEEP.petCalmRate);
-      sheep.beingPetted = true;
-    }
+  if (petPointerNearSheep(sheep, pet, 1)) {
+    sheep.stress = Math.max(0, sheep.stress - SHEEP.petCalmRate);
+    sheep.beingPetted = true;
   }
   if (!sheep.beingPetted) {
     for (const tool of tools) {
@@ -1485,8 +1533,406 @@ function drawSheepAngerIndicator(p, r, stressRatio) {
   p.pop();
 }
 
-function drawSheep(p, sheep, canvasSize) {
+function fractSheepVfx(x) {
+  return x - Math.floor(x);
+}
+
+function clampSheep01(x) {
+  if (!Number.isFinite(x)) return 0;
+  return Math.min(1, Math.max(0, x));
+}
+
+function hash01SheepVfx(n) {
+  return fractSheepVfx(Math.sin(n * 12.9898) * 43758.5453);
+}
+
+/**
+ * Victory-only: feeding mood without literal grass icon.
+ * Soft mint glow + gold/mint sparkles in feeding orientation.
+ * Drawn in sheep space after `rotate(facing + π/2)` like gameplay feeding.
+ * Uses nested try/finally so a throw cannot strand p5 transform/style stack.
+ */
+function drawVictoryFeedingLikeVfx(p, r, calmT, mix, hopLift, sheepId, facing) {
+  if (mix < 0.04 || !Number.isFinite(r) || r <= 0) {
+    return;
+  }
+  if (
+    !Number.isFinite(calmT) ||
+    !Number.isFinite(mix) ||
+    !Number.isFinite(hopLift) ||
+    !Number.isFinite(facing)
+  ) {
+    return;
+  }
+
+  const id = sheepId * 1.17;
+  const IF = SHEEP.interactionFeedback;
+  const asp = Number.isFinite(IF?.feedBloomAspect) ? IF.feedBloomAspect : 0.62;
+  const feedEmitY = Number.isFinite(IF?.feedEmitY) ? IF.feedEmitY : -1.18;
+  const hopPulse = 0.5 + 0.5 * Math.max(0, Math.min(1, hopLift));
+  const alphaMul = mix * (0.52 + 0.48 * (0.4 + 0.6 * hopPulse));
+
+  p.push();
+  try {
+    p.rotate(facing + Math.PI / 2);
+
+    const emitY = feedEmitY * r * 0.42;
+    p.noStroke();
+    for (let k = 0; k < 2; k++) {
+      const kf = 1 - k * 0.32;
+      const ga = (12 + 9 * hopPulse) * alphaMul * kf;
+      const a1 = Math.min(255, Math.max(0, ga * 0.32));
+      const a2 = Math.min(255, Math.max(0, ga * 0.22));
+      p.fill(198, 248, 212, a1);
+      p.ellipse(
+        0,
+        emitY * 0.55,
+        r * (1.22 + k * 0.16) * kf,
+        r * (0.88 + k * 0.1) * kf * asp,
+      );
+      p.fill(232, 255, 228, a2);
+      p.ellipse(
+        0,
+        emitY * 0.48 - r * 0.04 * kf,
+        r * (1.02 + k * 0.12) * kf,
+        r * (0.72 + k * 0.08) * kf * asp,
+      );
+    }
+
+    const pulse = 0.83 + 0.11 * Math.sin(calmT * 1.88) + 0.06 * hopPulse;
+    p.noStroke();
+    p.fill(214, 248, 220, Math.min(255, (14 + 12 * hopPulse) * alphaMul * pulse));
+    p.ellipse(0, -r * 0.22, r * 0.78, r * 0.56 * asp);
+    p.fill(255, 235, 204, Math.min(255, (10 + 9 * hopPulse) * alphaMul * pulse));
+    p.ellipse(0, -r * 0.2, r * 0.5, r * 0.36 * asp);
+
+    const orbit = calmT * 0.062 + id * 0.48;
+    const radial = r * (0.68 + 0.055 * Math.sin(calmT * 1.15));
+    const emit = feedEmitY * r * 0.5;
+    for (let i = 0; i < 5; i++) {
+      const ang = (i / 5) * Math.PI * 2 + orbit;
+      const px = Math.cos(ang) * radial * 0.9;
+      const py = emit + Math.sin(ang) * radial * asp * 0.72;
+      const arm =
+        r * (0.026 + 0.009 * Math.sin(calmT * 2.05 + i)) * (0.82 + 0.18 * mix);
+      const tw = 0.68 + 0.32 * Math.sin(calmT * 2.25 + i * 1.35);
+      const a = (58 + 32 * hopPulse) * alphaMul * tw;
+      const rgb = i % 2 === 0 ? [255, 224, 148] : [118, 212, 158];
+      try {
+        drawSparkle(p, px, py, arm, calmT * 0.46 + i * 0.33, rgb, a);
+      } catch (_) {
+        /* never let sparkle break the stack */
+      }
+    }
+  } finally {
+    p.pop();
+  }
+}
+
+/**
+ * Subtle per-sheep victory accents — same language as `drawCalmingIndicator`:
+ * soft gold glow, tiny `drawSparkle` twinkles, occasional pale heart, light landing dust.
+ * No stroked “target” rings, no badge stars; stateless (hop phase only).
+ * @param {'under' | 'over'} layer
+ */
+function drawSheepLocalVictoryVfx(p, layer, ctx) {
+  const {
+    V,
+    winFrame,
+    r,
+    phase,
+    sheepId,
+    hopLift,
+    groundW,
+    cosP,
+    hopPhase,
+    facing,
+    localMul,
+  } = ctx;
+
+  const wf = Number.isFinite(winFrame) ? winFrame : 0;
+  const inten = clampSheep01(V.sheepLocalVfxIntensity ?? 0);
+  if (inten < 0.02 || !Number.isFinite(r) || r <= 0) return;
+
+  /** Softer than hop envelope so accents linger gently through the outro */
+  const mix = inten * Math.max(0.26, Math.min(1, localMul * 0.72 + 0.28));
+
+  const calmT = wf * 0.086 + phase + sheepId * 0.29;
+  const hopPulse = hopLift * 0.5 + groundW * 0.42;
+  const szScale = clampSheep01((V.sheepLocalParticleSizeFrac ?? 0.046) / 0.046);
+
+  if (layer === 'under') {
+    p.push();
+    p.blendMode(p.BLEND);
+    p.noTint();
+    const breathe = 0.82 + 0.18 * Math.sin(calmT * 1.55);
+    const baseA = (9 + 16 * hopPulse * mix) * breathe;
+    for (let L = 0; L < 3; L++) {
+      const t = 1 - L / 3.8;
+      p.noStroke();
+      p.fill(255, 236, 210, baseA * t * 0.5);
+      const d = r * (1.58 + L * 0.26);
+      p.ellipse(0, -r * 0.035, d, d * 0.9);
+    }
+    p.fill(255, 224, 188, (6 + 11 * hopPulse * mix) * breathe * 0.55);
+    p.ellipse(0, -r * 0.02, r * 1.28, r * 1.2);
+    p.pop();
+    return;
+  }
+
+  p.push();
+  p.blendMode(p.BLEND);
+  p.noTint();
+
+  const sparkleGold = [255, 218, 150];
+  const sparkleCream = [255, 244, 224];
+  const sparkleRose = [255, 200, 214];
+
+  let nSp = Math.round(Number(V.sheepLocalSparkleCount ?? 3));
+  if (!Number.isFinite(nSp)) nSp = 3;
+  nSp = Math.max(0, Math.min(SHEEP_VICTORY_SPARKLE_CAP, nSp));
+
+  for (let i = 0; i < nSp; i++) {
+    const ang = (i / Math.max(1, nSp)) * Math.PI * 2 + calmT * 0.4;
+    const rad = r * (1.02 + 0.1 * Math.sin(calmT * 1.3 + i * 0.95));
+    const sx = Math.cos(ang) * rad;
+    const sy = Math.sin(ang) * rad * 0.9 - r * 0.05;
+    const arm =
+      r *
+      (0.044 + 0.016 * Math.sin(calmT * 2.05 + i * 1.15)) *
+      szScale;
+    const tw = 0.52 + 0.48 * Math.sin(calmT * 2.35 + i * 1.45);
+    const rgb = i % 3 === 0 ? sparkleGold : i % 3 === 1 ? sparkleCream : sparkleRose;
+    const alpha = (72 + 48 * hopPulse) * mix * tw;
+    drawSparkle(p, sx, sy, arm, calmT * 0.52 + i * 0.44, rgb, alpha);
+  }
+
+  const tau = Math.PI * 2;
+  const frac = hopPhase / tau - Math.floor(hopPhase / tau);
+  const heartChance = clampSheep01(V.sheepLocalHeartChance ?? 0.1);
+  const hopBucket = Math.floor(hopPhase / tau);
+  if (
+    hopLift > 0.4 &&
+    hopLift < 0.72 &&
+    frac > 0.37 &&
+    frac < 0.5 &&
+    hash01SheepVfx(sheepId * 8.11 + hopBucket * 1.47) < heartChance
+  ) {
+    const drift = (frac - 0.37) / 0.13;
+    const ha = (0.22 + 0.2 * Math.sin(drift * Math.PI)) * mix;
+    const a255 = Math.min(220, Math.max(40, 200 * ha));
+    p.push();
+    p.rotate(facing + Math.PI / 2);
+    drawHeart(
+      p,
+      r * 0.36,
+      -r * (0.92 + drift * 0.22),
+      r * 0.11,
+      [255, 210, 222, a255],
+      null,
+    );
+    p.pop();
+  }
+
+  const landing =
+    groundW > 0.16 &&
+    groundW < 0.62 &&
+    hopLift < 0.3 &&
+    cosP < 0.06;
+  if (landing) {
+    const du = Math.pow(Math.sin(wf * 1.12 + phase * 2.6), 2) * mix;
+    for (let d = 0; d < 2; d++) {
+      const a = d * 2.4 + phase + sheepId * 0.17;
+      const ox = Math.cos(a) * r * 0.68;
+      const oy = Math.sin(a) * r * 0.58 + r * 0.1;
+      p.noStroke();
+      p.fill(255, 236, 214, (38 + 42 * du) * 0.9);
+      p.ellipse(ox, oy, r * 0.09 * szScale, r * 0.075 * szScale);
+      p.fill(248, 226, 198, (28 + 36 * du) * 0.85);
+      p.ellipse(ox * 0.9, oy + r * 0.035, r * 0.055 * szScale, r * 0.045 * szScale);
+    }
+  }
+
+  const feedMix =
+    mix * clampSheep01(V.sheepVictoryFeedingVfxMix ?? 1);
+  if (feedMix > 0.03) {
+    try {
+      drawVictoryFeedingLikeVfx(p, r, calmT, feedMix, hopLift, sheepId, facing);
+    } catch (e) {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('[sheep victory vfx] feeding pass skipped:', e);
+      }
+    }
+  }
+
+  p.pop();
+}
+
+/**
+ * Victory draw path: identical readable top-down art as gameplay — no face overlays.
+ * Buoyant vertical hop + subtle wiggle; scale stays ~1 so sheep stay round and fluffy.
+ */
+function drawSheepVictoryInPlace(p, sheep, canvasSize, winFrame) {
+  const V = VICTORY_CELEBRATION;
   const s = canvasSize;
+  const lx = Number.isFinite(sheep._victoryLockX)
+    ? sheep._victoryLockX
+    : Number.isFinite(sheep.x)
+      ? sheep.x
+      : 0.5;
+  const ly = Number.isFinite(sheep._victoryLockY)
+    ? sheep._victoryLockY
+    : Number.isFinite(sheep.y)
+      ? sheep.y
+      : 0.5;
+  const px = lx * s;
+  const py = ly * s;
+  const r = SHEEP.radius * s;
+  const wf = Number.isFinite(winFrame) ? Math.max(0, winFrame) : 0;
+  const sheepIdSafe = Number.isFinite(sheep.id) ? sheep.id : 0;
+  const env = Math.max(0, 1 - wf / V.sheepBounceDurationFrames);
+  const phase = sheepIdSafe * V.sheepPhaseSpread + (sheep.wanderPhase || 0);
+
+  const hopDur = V.sheepHopDurationFrames ?? 0;
+  const hopOmega =
+    hopDur > 0
+      ? Math.PI / Math.max(6, hopDur)
+      : (V.sheepHopOmega ?? V.sheepBounceOmega);
+  const hopPhase = wf * hopOmega + phase;
+  const sinP = Math.sin(hopPhase);
+  const cosP = Math.cos(hopPhase);
+  const airborne = Math.max(0, sinP);
+  const groundW = Math.max(0, -sinP);
+
+  const liftPow = V.sheepHopLiftPow ?? 0.88;
+  const hopLift = Math.pow(airborne, liftPow);
+  const amp = env * V.sheepBounceAmpNorm * s;
+  /** Primary motion: upward hop */
+  const hop = hopLift * amp;
+
+  /** Soft landing rebound — vertical only, weighted to grounded phase */
+  const reboundAmp = r * (V.sheepLandingReboundAmpNorm ?? 0.024) * env;
+  const reboundOm = V.sheepLandingReboundOmega ?? 2.2;
+  const landingRebound =
+    reboundAmp *
+    Math.pow(groundW, 1.28) *
+    Math.sin(wf * reboundOm + phase * 1.75);
+
+  const bobAmp = r * (V.sheepBodyBobAmpNorm ?? 0.045) * env;
+  const bobOmega = V.sheepBodyBobOmega ?? 0.34;
+  const bodyBob =
+    Math.sin(wf * bobOmega + phase * 1.31) *
+    bobAmp *
+    (0.38 + 0.62 * Math.max(hopLift, groundW * 0.35));
+
+  const hopTotal = hop + bodyBob + landingRebound;
+
+  /** Optional micro stretch — heavily capped; default 0 = identity */
+  const microRaw = V.sheepMicroSquashStretch ?? 0;
+  const micro = Math.min(0.028, Math.max(0, microRaw));
+  let sx = 1;
+  let sy = 1;
+  if (micro > 0.0005) {
+    const soften = micro * (1 - 0.72 * groundW);
+    sy = 1 + soften * hopLift * 0.35;
+    sx = 1 - soften * hopLift * 0.12;
+    sy = Math.min(1.012, Math.max(0.988, sy));
+    sx = Math.min(1.008, Math.max(0.992, sx));
+  }
+
+  const wiggleRad =
+    (V.sheepWiggleRad ?? 0.08) *
+    env *
+    (hopLift * Math.sin(hopPhase * 2) * 0.45 + Math.sin(wf * 0.27 + phase));
+  const sway =
+    Math.sin(hopPhase * 2 + phase * 1.73) *
+    r *
+    (V.sheepJoySwayNorm ?? 0.028) *
+    env *
+    (0.28 + 0.72 * hopLift);
+  const localBob =
+    (V.sheepLocalBobRad ?? 0.07) *
+    env *
+    Math.max(hopLift * 0.85, groundW * 0.4) *
+    Math.sin(hopPhase * 2.05 + sheepIdSafe * 0.37);
+
+  const facing = Number.isFinite(sheep.facing) ? sheep.facing : 0;
+
+  const warmG = Math.min(255, Math.round(248 + 8 * env));
+  const warmB = Math.min(255, Math.round(250 + 6 * env));
+
+  const localMul = env * (V.sheepHopSparkleIntensity ?? 1);
+  const vfxCtx = {
+    V,
+    winFrame: wf,
+    r,
+    phase,
+    sheepId: sheepIdSafe,
+    hopLift,
+    groundW,
+    sinP,
+    cosP,
+    hopPhase,
+    facing,
+    localMul,
+  };
+
+  p.push();
+  p.translate(px, py - hopTotal);
+  p.rotate(wiggleRad);
+
+  drawSheepLocalVictoryVfx(p, 'under', vfxCtx);
+
+  const drawBody = () => {
+    if (sheepSprite && sheepSprite.width > 0) {
+      p.push();
+      p.rotate(facing + Math.PI / 2);
+      p.rotate(localBob);
+      p.translate(sway, 0);
+      p.scale(sx, sy);
+      const size = r * 2.4;
+      p.imageMode(p.CENTER);
+      p.tint(255, warmG, warmB, 255);
+      p.image(sheepSprite, 0, 0, size, size);
+      p.noTint();
+      p.pop();
+    } else {
+      p.push();
+      p.rotate(facing + Math.PI / 2);
+      p.rotate(localBob);
+      p.translate(sway, 0);
+      p.scale(sx, sy);
+      p.noStroke();
+      p.fill(SHEEP.color);
+      p.ellipse(0, 0, r * 1.6, r * 1.4);
+      p.pop();
+    }
+  };
+
+  drawBody();
+
+  drawSheepLocalVictoryVfx(p, 'over', vfxCtx);
+
+  p.pop();
+}
+
+/**
+ * @param {import('p5')} p
+ * @param {number} canvasSize
+ * @param {{ winFrame?: number } | null} [victoryOpts] set `winFrame` for victory celebration draw (captured sheep only)
+ */
+function drawSheep(p, sheep, canvasSize, victoryOpts = null) {
+  const s = canvasSize;
+  if (
+    victoryOpts != null &&
+    typeof victoryOpts.winFrame === 'number' &&
+    Number.isFinite(victoryOpts.winFrame) &&
+    sheep.captured
+  ) {
+    drawSheepVictoryInPlace(p, sheep, canvasSize, victoryOpts.winFrame);
+    return;
+  }
+
   const px = sheep.x * s;
   const py = sheep.y * s;
   const r = SHEEP.radius * s;
@@ -1885,21 +2331,33 @@ function drawCalmingCuePng(p, r, kind, pulse) {
   const w = img.width * sc;
   const h = img.height * sc;
   const alpha = Math.round(255 * (0.88 + 0.1 * pulse));
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+    return false;
+  }
   p.imageMode(p.CENTER);
   p.tint(255, 255, 255, alpha);
-  if (isPet) {
-    p.push();
-    p.translate(
-      (IF.pettingCombOffsetXMul ?? 0) * r,
-      (IF.pettingCombOffsetYMul ?? 0) * r,
-    );
-    p.rotate(IF.pettingCombRotRad ?? 0);
-    p.image(img, 0, 0, w, h);
-    p.pop();
-  } else {
-    p.image(img, 0, -r * 0.05, w, h);
+  try {
+    if (isPet) {
+      p.push();
+      try {
+        p.translate(
+          (IF.pettingCombOffsetXMul ?? 0) * r,
+          (IF.pettingCombOffsetYMul ?? 0) * r,
+        );
+        p.rotate(IF.pettingCombRotRad ?? 0);
+        p.image(img, 0, 0, w, h);
+      } finally {
+        p.pop();
+      }
+    } else {
+      p.image(img, 0, -r * 0.05, w, h);
+    }
+  } catch (_) {
+    /* bad decode / lost GPU texture — never throw into flock draw */
+    return false;
+  } finally {
+    p.noTint();
   }
-  p.noTint();
   return true;
 }
 

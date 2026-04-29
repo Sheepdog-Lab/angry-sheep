@@ -89,6 +89,24 @@ export function getCanvasPointer(p, canvasSize) {
   };
 }
 
+/**
+ * Same table-projection remap as {@link getCanvasPointer} for a touch position
+ * (p5 touch `x` / `y` are canvas-local like the mouse).
+ * @param {import('p5')} p
+ * @param {number} canvasSize
+ * @param {number} touchX
+ * @param {number} touchY
+ */
+export function getCanvasTouchPoint(p, canvasSize, touchX, touchY) {
+  if (!isTableProjectionEnabled()) {
+    return { x: touchX, y: touchY };
+  }
+  return {
+    x: canvasSize - touchX,
+    y: touchY,
+  };
+}
+
 function wireToggleButton(id) {
   const btn = document.getElementById(id);
   if (!btn) return;

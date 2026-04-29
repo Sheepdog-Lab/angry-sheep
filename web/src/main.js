@@ -36,13 +36,22 @@ import {
 import {
   updateFlock,
   drawFlock,
+  drawFlockVictoryCelebration,
   setSheepSprite,
   setAngerIndicatorSprite,
   setCalmingCueSprites,
   getFlock,
+  getFlockSnapshot,
+  replaceFlockFromSnapshot,
   isAnySheepEating,
   isAnySheepBeingGroomed,
 } from './sheep.js';
+import {
+  drawVictoryUnderlay,
+  drawVictoryPenAccent,
+  drawVictoryParticles,
+} from './victoryCelebration.js';
+import * as MP from './multiplayer.js';
 import * as Session from './session.js';
 import { initTuning } from './tuning.js';
 import { connectMarkerStream, getMarkerStreamState } from './markerStream.js';
@@ -68,6 +77,9 @@ initGameMode();
 initMarkerCalibration();
 initTableProjection();
 initCameraSwitcher().catch((e) => console.warn('[camera] init:', e));
+
+/** Latest host snapshot for online guests (`?room=...`). */
+let latestGuestSnapshot = null;
 
 let notifyViewportChange = () => {};
 initFullscreenControls(() => {
@@ -178,23 +190,41 @@ new p5((p) => {
   /** @type {import('p5').Image | null} */
   let calmingVoiceImg = null;
 
+  /**
+   * Missing/deleted files must not break preload or the draw loop.
+   * p5 returns a placeholder image object; we also attach a failure hook
+   * so a 404 does not become a hard render failure.
+   * @param {string} url
+   * @param {string} label
+   * @returns {import('p5').Image | null}
+   */
+  const safeLoadImage = (url, label) => p.loadImage(
+    url,
+    undefined,
+    () => {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn(`[assets] Failed to load ${label}: ${url}`);
+      }
+    },
+  );
+
   p.preload = () => {
-    terrainImg = p.loadImage(TERRAIN_TEXTURE_URL);
-    sheepImg = p.loadImage(SHEEP_TEXTURE_URL);
-    angerIndicatorImg = p.loadImage(ANGER_INDICATOR_URL);
-    sheepdogImg = p.loadImage(SHEEPDOG_TEXTURE_URL);
-    herdingIndicatorImg = p.loadImage(HERDING_INDICATOR_URL);
-    grassImg = p.loadImage(GRASS_TEXTURE_URL);
-    blockImg = p.loadImage(BLOCKS_TEXTURE_URL);
-    penImg = p.loadImage(PEN_TEXTURE_URL);
-    victoryS1Img = p.loadImage(VICTORY_S1_URL);
-    victoryS2Img = p.loadImage(VICTORY_S2_URL);
-    victoryS3Img = p.loadImage(VICTORY_S3_URL);
-    victoryBannerImg = p.loadImage(VICTORY_BANNER_URL);
-    terrainGrassClumpImg = p.loadImage(TERRAIN_GRASS_CLUMP_URL);
-    calmingFeedingImg = p.loadImage(CALMING_FEEDING_URL);
-    calmingPettingImg = p.loadImage(CALMING_PETTING_URL);
-    calmingVoiceImg = p.loadImage(CALMING_VOICE_URL);
+    terrainImg = safeLoadImage(TERRAIN_TEXTURE_URL, 'terrain');
+    sheepImg = safeLoadImage(SHEEP_TEXTURE_URL, 'sheep');
+    angerIndicatorImg = safeLoadImage(ANGER_INDICATOR_URL, 'anger indicator');
+    sheepdogImg = safeLoadImage(SHEEPDOG_TEXTURE_URL, 'sheepdog');
+    herdingIndicatorImg = safeLoadImage(HERDING_INDICATOR_URL, 'herding indicator');
+    grassImg = safeLoadImage(GRASS_TEXTURE_URL, 'grass tool');
+    blockImg = safeLoadImage(BLOCKS_TEXTURE_URL, 'blocks');
+    penImg = safeLoadImage(PEN_TEXTURE_URL, 'pen');
+    victoryS1Img = safeLoadImage(VICTORY_S1_URL, 'victory sprite s1');
+    victoryS2Img = safeLoadImage(VICTORY_S2_URL, 'victory sprite s2');
+    victoryS3Img = safeLoadImage(VICTORY_S3_URL, 'victory sprite s3');
+    victoryBannerImg = safeLoadImage(VICTORY_BANNER_URL, 'victory banner');
+    terrainGrassClumpImg = safeLoadImage(TERRAIN_GRASS_CLUMP_URL, 'terrain grass clump');
+    calmingFeedingImg = safeLoadImage(CALMING_FEEDING_URL, 'calming feeding');
+    calmingPettingImg = safeLoadImage(CALMING_PETTING_URL, 'calming petting');
+    calmingVoiceImg = safeLoadImage(CALMING_VOICE_URL, 'calming voice');
   };
 
   p.setup = () => {
@@ -219,7 +249,9 @@ new p5((p) => {
     setCombSprite(calmingPettingImg);
     setBlockSprite(blockImg);
     setPenSprite(penImg);
-    stripVictoryShepherdBackdrop(victoryBannerImg);
+    if (victoryBannerImg && victoryBannerImg.width > 2 && victoryBannerImg.height > 2) {
+      stripVictoryShepherdBackdrop(victoryBannerImg);
+    }
     Session.setVictoryCelebrationSprites({
       s1: victoryS1Img,
       s2: victoryS2Img,
@@ -230,6 +262,16 @@ new p5((p) => {
     setTerrainGrassImage(terrainGrassClumpImg);
     initTerrainAmbientGrass(canvasSize);
     Input.init(p, canvasSize);
+    if (getGameMode() === 'digital') {
+      MP.initOnlineFromUrl({
+        onGuest: () => Input.setGuestMultiplayerMode(true),
+        onHost: () => Input.setGuestMultiplayerMode(false),
+        onPromotedToHost: () => Input.setGuestMultiplayerMode(false),
+        onSnapshot: (msg) => {
+          latestGuestSnapshot = msg;
+        },
+      });
+    }
     initSound();
     // Order matters for the top-right row (master volume + Tune).
     // The Reset-the-Game / Demo-Victory / Reset-the-Sound buttons mount
@@ -255,9 +297,23 @@ new p5((p) => {
   };
 
   p.draw = () => {
+    if (MP.isOnlineGuest() && latestGuestSnapshot) {
+      const sn = latestGuestSnapshot;
+      // Apply flock/tools before phase so lockVictorySheepPositions sees host sheep positions.
+      if (Array.isArray(sn.tools)) Input.replaceToolsFromSnapshot(sn.tools);
+      if (Array.isArray(sn.flock)) replaceFlockFromSnapshot(sn.flock);
+      if (typeof sn.phase === 'string') {
+        Session.applyNetworkPhase(sn.phase, sn.frameCounter);
+      }
+    }
+
     Input.updateHover(p);
     const state = Input.getState();
-    const phase = Session.getPhase();
+
+    if (MP.isOnlineGuest()) {
+      MP.guestSendInput(state.pet.points, state.voice.active);
+    }
+
     const gameMode = getGameMode();
     const markerState = getMarkerStreamState();
     const markerCalibration = getMarkerCalibration();
@@ -280,9 +336,12 @@ new p5((p) => {
       lastCalibrationNoticeId = calibrationNoticeId;
     }
 
-    // Update session state machine
-    Session.update();
+    // Update session state machine (host / solo only — guests follow snapshots)
+    if (!MP.isOnlineGuest()) {
+      Session.update();
+    }
 
+    const phase = Session.getPhase();
     // Background audio fades in/out with the scene
     const fc = Session.getFrameCounter();
     if (phase === 'intro') {
@@ -303,13 +362,30 @@ new p5((p) => {
     }
 
     if (phase === 'playing') {
-      tickIdleHerd(state.tools, getFlock());
-      updateFlock(state);
+      if (!MP.isOnlineGuest()) {
+        if (MP.isOnlineHost()) {
+          const merged = MP.mergeGuestInputInto(state);
+          tickIdleHerd(merged.tools, getFlock());
+          updateFlock(merged);
+        } else {
+          tickIdleHerd(state.tools, getFlock());
+          updateFlock(state);
+        }
+      }
       setEatGrassActive(isAnySheepEating());
       setBristlingActive(isAnySheepBeingGroomed());
     } else {
       setEatGrassActive(false);
       setBristlingActive(false);
+    }
+
+    if (MP.isOnlineHost() && p.frameCount % 2 === 0) {
+      MP.hostSendSnapshot({
+        phase: Session.getPhase(),
+        frameCounter: Session.getFrameCounter(),
+        tools: Input.getToolsSnapshot(),
+        flock: getFlockSnapshot(),
+      });
     }
 
     // -- Render --
@@ -335,13 +411,27 @@ new p5((p) => {
     );
     drawTerrainAmbientGrass(p, canvasSize);
 
+    const fcPhase = Session.getFrameCounter();
+    const winFc =
+      phase === 'win' && Number.isFinite(fcPhase) ? Math.max(0, fcPhase) : 0;
+    if (phase === 'win') {
+      drawVictoryUnderlay(p, canvasSize, winFc);
+    }
+
     // Pen (always visible)
     drawPen(p, canvasSize);
 
-    // Sheep and tools (hidden on win — victory uses its own character sprites)
-    if (phase !== 'reset' && phase !== 'win') {
+    if (phase === 'win') {
+      drawVictoryPenAccent(p, canvasSize, winFc);
+    }
+
+    // Win: global particles under flock; each sheep draws soft local accents above sprite.
+    if (phase === 'win') {
+      drawVictoryParticles(p, canvasSize, winFc);
+      drawFlockVictoryCelebration(p, canvasSize, winFc);
+    } else if (phase !== 'reset') {
       drawFlock(p, canvasSize);
-      drawTools(p, state.tools, canvasSize, Input.getHoveredId(), getFlock());
+      drawTools(p, state.tools, canvasSize, Input.getHoveredIds(), getFlock());
     }
 
     // Black mask
@@ -381,8 +471,9 @@ new p5((p) => {
     p.noStroke();
     p.textSize(11);
     p.textAlign(p.LEFT, p.TOP);
+    const mpLine = MP.getMultiplayerStatus();
     p.text(
-      `Mode: ${gameMode}  |  markers: ${markerState.markers.length}${gameMode === 'physical' ? `  |  flipX: ${markerCalibration.flipX} flipY: ${markerCalibration.flipY}` : ''}`,
+      `Mode: ${gameMode}  |  markers: ${markerState.markers.length}${gameMode === 'physical' ? `  |  flipX: ${markerCalibration.flipX} flipY: ${markerCalibration.flipY}` : ''}${mpLine ? `  |  Online: ${mpLine}` : ''}`,
       12,
       12,
     );

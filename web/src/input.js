@@ -5,31 +5,41 @@ import {
   TOOL_BLOCK_ROTATE_STEP,
   TABLE_RADIUS,
   INITIAL_TOOLS,
+  MAX_LOCAL_PLAYERS,
 } from './config.js';
 import { hitTest } from './tools.js';
 import { resolveToolOverlap } from './toolCollide.js';
 import * as Session from './session.js';
 import { getGameMode, onGameModeChange } from './gameMode.js';
-import { getCanvasPointer } from './tableProjection.js';
+import { getCanvasPointer, getCanvasTouchPoint } from './tableProjection.js';
+
+/** Synthetic pointer id for the mouse (touch ids are non-negative). */
+const MOUSE_POINTER_ID = -1;
 
 // -- State (matches shared contract) --
 const state = {
   tools: [],
   voice: { active: false, sentiment: null },
-  pet: { active: false, x: null, y: null },
+  /** Normalized petting points (0–1); empty when no one is petting. */
+  pet: { points: [] },
 };
 
 let canvasSize = 0;
 let p5Ref = null;
 
-// Interaction state
-let dragId = null;
-let hoveredId = null;
-let dragOffsetX = 0;
-let dragOffsetY = 0;
+/** @type {Map<number, { toolId: number, offsetX: number, offsetY: number }>} */
+const activeDrags = new Map();
+
+/** Tool ids under any pointer (mouse + touches). */
+const hoveredIds = new Set();
+
 let mouseIsDown = false;
-let voiceActive = false;
+/** Three “kind voice” slots: V, U, I (same sentiment when any held; B is reserved for grooming hint). */
+const voiceDown = [false, false, false];
 let savedDigitalTools = [];
+
+/** When true, local drags do not move tools (guests send input to the host instead). */
+let guestMultiplayerMode = false;
 
 // -- Public API --
 
@@ -37,12 +47,47 @@ export function getState() {
   return state;
 }
 
-export function getHoveredId() {
-  return hoveredId;
+export function setGuestMultiplayerMode(on) {
+  guestMultiplayerMode = !!on;
+  if (guestMultiplayerMode) {
+    activeDrags.clear();
+    mouseIsDown = false;
+  }
 }
 
-export function getDragId() {
-  return dragId;
+export function isGuestMultiplayerMode() {
+  return guestMultiplayerMode;
+}
+
+export function getToolsSnapshot() {
+  return state.tools.map((t) => ({ ...t }));
+}
+
+export function replaceToolsFromSnapshot(rows) {
+  if (!Array.isArray(rows)) return;
+  state.tools.length = 0;
+  for (let i = 0; i < rows.length; i++) {
+    state.tools.push({ ...rows[i] });
+  }
+}
+
+/** @returns {Set<number>} copy of tool ids under any pointer */
+export function getHoveredIds() {
+  return new Set(hoveredIds);
+}
+
+/** @deprecated Prefer {@link getHoveredIds}; returns an arbitrary hovered tool id. */
+export function getHoveredId() {
+  const it = hoveredIds.values().next();
+  return it.done ? null : it.value;
+}
+
+/** @returns {true} if this tool is being dragged by any pointer (digital co-op). */
+export function isToolBeingDragged(toolId) {
+  for (const d of activeDrags.values()) {
+    if (d.toolId === toolId) return true;
+  }
+  return false;
 }
 
 export function init(p, size) {
@@ -128,13 +173,17 @@ export function drawHUD(p, size) {
   const s = size;
   const margin = 16;
 
-  // Voice indicator
-  if (voiceActive) {
+  const voiceCount = voiceDown.filter(Boolean).length;
+  if (voiceCount > 0) {
     p.fill(150, 255, 150, 180);
     p.noStroke();
     p.textSize(13);
     p.textAlign(p.LEFT, p.CENTER);
-    p.text('♪ speaking kindly...', margin, margin + 12);
+    const label =
+      voiceCount > 1
+        ? `♪ speaking kindly… (${voiceCount} players)`
+        : '♪ speaking kindly…';
+    p.text(label, margin, margin + 12);
   }
 
   // Help hint (bottom-left)
@@ -143,7 +192,7 @@ export function drawHUD(p, size) {
   p.textSize(11);
   p.textAlign(p.LEFT, p.BOTTOM);
   p.text(
-    'Drag tools  |  Scroll: rotate  |  ← → or A D (or R) over tool / while dragging; blocks & dogs fine step  |  Dog auto-aim returns when far from flock  |  Hold V: speak  |  Calm: comb or click near sheep',
+    `Up to ${MAX_LOCAL_PLAYERS} players: multi-touch drag (or mouse)  |  Scroll: rotate  |  ← → or A D (or R); blocks & dogs fine step  |  Dog auto-aim returns when far from flock  |  Kind voice: V / U / I  |  Calm: comb or empty-hand touch near sheep`,
     margin,
     s - margin,
   );
@@ -159,16 +208,20 @@ function cloneTools(tools) {
   return tools.map((tool) => ({ ...tool }));
 }
 
+function syncVoiceFromKeys() {
+  state.voice.active = voiceDown[0] || voiceDown[1] || voiceDown[2];
+  state.voice.sentiment = state.voice.active ? 'positive' : null;
+}
+
 function resetInteractionState() {
-  dragId = null;
-  hoveredId = null;
+  activeDrags.clear();
+  hoveredIds.clear();
   mouseIsDown = false;
-  voiceActive = false;
-  state.voice.active = false;
-  state.voice.sentiment = null;
-  state.pet.active = false;
-  state.pet.x = null;
-  state.pet.y = null;
+  voiceDown[0] = false;
+  voiceDown[1] = false;
+  voiceDown[2] = false;
+  syncVoiceFromKeys();
+  state.pet.points = [];
 }
 
 function handleModeChange(mode) {
@@ -189,14 +242,108 @@ function pointer(p) {
   return getCanvasPointer(p, canvasSize);
 }
 
+function toolDraggedByOtherPointer(toolId, myPointerId) {
+  for (const [pid, d] of activeDrags) {
+    if (pid !== myPointerId && d.toolId === toolId) return true;
+  }
+  return false;
+}
+
+function tryPointerDown(pointerId, mx, my) {
+  if (Session.getPhase() === 'win') return;
+  if (guestMultiplayerMode) return;
+
+  const n = normalize(mx, my);
+  const id = hitTest(state.tools, n.x, n.y);
+  if (id === null) return;
+
+  if (toolDraggedByOtherPointer(id, pointerId)) return;
+
+  const dragCount = activeDrags.size;
+  if (dragCount >= MAX_LOCAL_PLAYERS && !activeDrags.has(pointerId)) return;
+
+  const tool = state.tools.find((t) => t.id === id);
+  if (!tool) return;
+
+  activeDrags.set(pointerId, {
+    toolId: id,
+    offsetX: tool.x - n.x,
+    offsetY: tool.y - n.y,
+  });
+}
+
+function applyDragPosition(pointerId) {
+  const drag = activeDrags.get(pointerId);
+  if (!drag) return;
+
+  let mx;
+  let my;
+  if (pointerId === MOUSE_POINTER_ID) {
+    const pm = pointer(p5Ref);
+    mx = pm.x;
+    my = pm.y;
+  } else {
+    const t = p5Ref.touches.find((touch) => touch.id === pointerId);
+    if (!t) return;
+    const pt = getCanvasTouchPoint(p5Ref, canvasSize, t.x, t.y);
+    mx = pt.x;
+    my = pt.y;
+  }
+
+  if (!isInsideCanvas(mx, my)) return;
+
+  const n = normalize(mx, my);
+  const tool = state.tools.find((tr) => tr.id === drag.toolId);
+  if (!tool) return;
+
+  let tx = n.x + drag.offsetX;
+  let ty = n.y + drag.offsetY;
+  const dx = tx - 0.5;
+  const dy = ty - 0.5;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const maxR = TABLE_RADIUS - TOOL_HIT_RADIUS;
+  if (dist > maxR) {
+    tx = 0.5 + (dx / dist) * maxR;
+    ty = 0.5 + (dy / dist) * maxR;
+  }
+  const resolved = resolveToolOverlap(tool, tx, ty, state.tools);
+  tool.x = resolved.x;
+  tool.y = resolved.y;
+}
+
+function syncAllDragPositions() {
+  for (const pid of activeDrags.keys()) {
+    applyDragPosition(pid);
+  }
+}
+
+const STEER_TYPES = new Set(['block', 'sheepdog', 'grass', 'comb']);
+
+function getSteerTargetTool() {
+  for (const d of activeDrags.values()) {
+    const tool = state.tools.find((t) => t.id === d.toolId);
+    if (tool && STEER_TYPES.has(tool.type)) return tool;
+  }
+  for (const hid of hoveredIds) {
+    const tool = state.tools.find((t) => t.id === hid);
+    if (tool && STEER_TYPES.has(tool.type)) return tool;
+  }
+  return null;
+}
+
+function toolUnderMouseForWheel() {
+  const pm = pointer(p5Ref);
+  if (!isInsideCanvas(pm.x, pm.y)) return null;
+  const n = normalize(pm.x, pm.y);
+  const id = hitTest(state.tools, n.x, n.y);
+  return id !== null ? state.tools.find((t) => t.id === id) : null;
+}
+
 // -- Event handlers --
 
-/** Shared with mouse + touch so iPad can drag blocks / sheepdog. */
-function pointerDownAt() {
+function onMousePressed() {
   if (getGameMode() !== 'digital') return;
   const p = p5Ref;
-  const { x: mx, y: my } = pointer(p);
-  if (!isInsideCanvas(mx, my)) return;
   if (p.mouseButton !== p.LEFT) return;
 
   if (Session.getPhase() === 'win') {
@@ -204,100 +351,67 @@ function pointerDownAt() {
   }
 
   mouseIsDown = true;
-
-  const n = normalize(mx, my);
-
-  // Check if clicking an existing tool → start drag
-  const id = hitTest(state.tools, n.x, n.y);
-  if (id !== null) {
-    dragId = id;
-    const tool = state.tools.find((t) => t.id === id);
-    dragOffsetX = tool.x - n.x;
-    dragOffsetY = tool.y - n.y;
-  }
-}
-
-function pointerDragMove() {
-  if (getGameMode() !== 'digital') return;
-  if (dragId === null) return;
-  const p = p5Ref;
   const { x: mx, y: my } = pointer(p);
-  const n = normalize(mx, my);
+  if (!isInsideCanvas(mx, my)) return;
 
-  const tool = state.tools.find((t) => t.id === dragId);
-  if (tool) {
-    let tx = n.x + dragOffsetX;
-    let ty = n.y + dragOffsetY;
-    const dx = tx - 0.5;
-    const dy = ty - 0.5;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const maxR = TABLE_RADIUS - TOOL_HIT_RADIUS;
-    if (dist > maxR) {
-      tx = 0.5 + (dx / dist) * maxR;
-      ty = 0.5 + (dy / dist) * maxR;
-    }
-    const resolved = resolveToolOverlap(tool, tx, ty, state.tools);
-    tool.x = resolved.x;
-    tool.y = resolved.y;
-  }
+  tryPointerDown(MOUSE_POINTER_ID, mx, my);
 }
 
-function pointerUp() {
+function onMouseDragged() {
+  if (getGameMode() !== 'digital') return;
+  applyDragPosition(MOUSE_POINTER_ID);
+}
+
+function onMouseReleased() {
   if (getGameMode() !== 'digital') {
     resetInteractionState();
     return;
   }
-  dragId = null;
+  activeDrags.delete(MOUSE_POINTER_ID);
   mouseIsDown = false;
-  state.pet.active = false;
-  state.pet.x = null;
-  state.pet.y = null;
 }
 
-function onMousePressed() {
-  if (getGameMode() !== 'digital') return;
-  const p = p5Ref;
-  if (p.mouseButton !== p.LEFT) return;
-  pointerDownAt();
-}
-
-function onMouseDragged() {
-  pointerDragMove();
-}
-
-function onMouseReleased() {
-  pointerUp();
-}
-
-/** Touch: same drag path as mouse (return false → prevent scroll / delayed click). */
 function onTouchStarted() {
   if (getGameMode() !== 'digital') return;
   if (Session.getPhase() === 'win') return;
-  if (p5Ref.touches.length === 0) return;
-  pointerDownAt();
+  const touches = p5Ref.touches;
+  if (touches.length === 0) return false;
+
+  for (let i = 0; i < touches.length; i++) {
+    const t = touches[i];
+    const pid = t.id;
+    if (activeDrags.has(pid)) continue;
+    const { x, y } = getCanvasTouchPoint(p5Ref, canvasSize, t.x, t.y);
+    if (!isInsideCanvas(x, y)) continue;
+    tryPointerDown(pid, x, y);
+  }
   return false;
 }
 
 function onTouchMoved() {
   if (getGameMode() !== 'digital') return;
-  if (dragId !== null) pointerDragMove();
+  syncAllDragPositions();
   return false;
 }
 
 function onTouchEnded() {
   if (getGameMode() !== 'digital') return;
-  if (dragId !== null) {
-    pointerUp();
-    return false;
+  const remaining = new Set(p5Ref.touches.map((t) => t.id));
+  for (const pid of [...activeDrags.keys()]) {
+    if (pid === MOUSE_POINTER_ID) continue;
+    if (!remaining.has(pid)) {
+      activeDrags.delete(pid);
+    }
   }
-  if (p5Ref.touches.length === 0) pointerUp();
   return false;
 }
 
 /** p5 has no touchCancelled hook; browser still fires touchcancel on iOS. */
 function onCanvasTouchCancel() {
   if (getGameMode() !== 'digital') return;
-  pointerUp();
+  for (const pid of [...activeDrags.keys()]) {
+    if (pid !== MOUSE_POINTER_ID) activeDrags.delete(pid);
+  }
 }
 
 function rotateStepDeg(toolType) {
@@ -309,22 +423,15 @@ function rotateStepDeg(toolType) {
 
 function onMouseWheel(event) {
   if (getGameMode() !== 'digital') return;
-  const p = p5Ref;
-  const { x: mx, y: my } = pointer(p);
-  const n = normalize(mx, my);
-  const id = hitTest(state.tools, n.x, n.y);
-  if (id !== null) {
-    const tool = state.tools.find((t) => t.id === id);
-    // Sheepdogs auto-aim toward the nearest sheep (tools.js), which overwrites
-    // any manual angle every frame. Skip the write so the interaction is an
-    // explicit no-op instead of silently broken. Still preventDefault so the
-    // page doesn't scroll when the user spins the wheel over a dog.
-    if (tool && tool.type === 'sheepdog') {
+  if (guestMultiplayerMode) return;
+  const tool = toolUnderMouseForWheel();
+  if (tool !== null) {
+    if (tool.type === 'sheepdog') {
       const dir = event.delta > 0 ? 1 : -1;
       const step = rotateStepDeg(tool.type);
       tool.sheepdogManualAim = true;
       tool.angle_deg = (tool.angle_deg + dir * step) % 360;
-    } else if (tool && tool.type !== 'sheepdog') {
+    } else if (tool.type !== 'sheepdog') {
       const dir = event.delta > 0 ? 1 : -1;
       const step = rotateStepDeg(tool.type);
       tool.angle_deg = (tool.angle_deg + dir * step) % 360;
@@ -342,21 +449,25 @@ function onKeyDown(event) {
 
   if (getGameMode() !== 'digital') return;
 
+  if (guestMultiplayerMode) {
+    if (
+      event.code === 'KeyV' ||
+      event.code === 'KeyU' ||
+      event.code === 'KeyI'
+    ) {
+      /* voice only — fall through */
+    } else {
+      return;
+    }
+  }
+
   const steerKey =
     event.code === 'ArrowLeft' ||
     event.code === 'ArrowRight' ||
     event.code === 'KeyA' ||
     event.code === 'KeyD';
-  if (steerKey) {
-    const steerTypes = new Set(['block', 'sheepdog', 'grass', 'comb']);
-    const dragged = dragId !== null ? state.tools.find((t) => t.id === dragId) : null;
-    const hovered = hoveredId !== null ? state.tools.find((t) => t.id === hoveredId) : null;
-    const steerTool =
-      dragged && steerTypes.has(dragged.type)
-        ? dragged
-        : hovered && steerTypes.has(hovered.type)
-          ? hovered
-          : null;
+  if (!guestMultiplayerMode && steerKey) {
+    const steerTool = getSteerTargetTool();
     if (steerTool) {
       event.preventDefault();
       const dirRight =
@@ -365,61 +476,84 @@ function onKeyDown(event) {
       const step = rotateStepDeg(steerTool.type);
       if (steerTool.type === 'sheepdog') steerTool.sheepdogManualAim = true;
       steerTool.angle_deg = (steerTool.angle_deg + dir * step) % 360;
+      return;
     }
-    return;
   }
 
-  if (event.key === 'r' || event.key === 'R') {
-    if (hoveredId !== null) {
-      const tool = state.tools.find((t) => t.id === hoveredId);
-      if (tool && tool.type === 'sheepdog') {
-        const step = rotateStepDeg(tool.type);
-        tool.sheepdogManualAim = true;
-        tool.angle_deg = (tool.angle_deg + step) % 360;
-      } else if (tool && tool.type !== 'sheepdog') {
-        const step = rotateStepDeg(tool.type);
-        tool.angle_deg = (tool.angle_deg + step) % 360;
-      }
+  if (!guestMultiplayerMode && (event.key === 'r' || event.key === 'R')) {
+    const tool = toolUnderMouseForWheel();
+    if (tool && tool.type === 'sheepdog') {
+      const step = rotateStepDeg(tool.type);
+      tool.sheepdogManualAim = true;
+      tool.angle_deg = (tool.angle_deg + step) % 360;
+    } else if (tool && tool.type !== 'sheepdog') {
+      const step = rotateStepDeg(tool.type);
+      tool.angle_deg = (tool.angle_deg + step) % 360;
     }
-  } else if (event.key === 'v' || event.key === 'V') {
-    voiceActive = true;
-    state.voice.active = true;
-    state.voice.sentiment = 'positive';
+  } else if (event.code === 'KeyV') {
+    voiceDown[0] = true;
+    syncVoiceFromKeys();
+  } else if (event.code === 'KeyU') {
+    voiceDown[1] = true;
+    syncVoiceFromKeys();
+  } else if (event.code === 'KeyI') {
+    voiceDown[2] = true;
+    syncVoiceFromKeys();
   }
 }
 
 function onKeyUp(event) {
   if (getGameMode() !== 'digital') return;
-  if (event.key === 'v' || event.key === 'V') {
-    voiceActive = false;
-    state.voice.active = false;
-    state.voice.sentiment = null;
+  if (event.code === 'KeyV') {
+    voiceDown[0] = false;
+    syncVoiceFromKeys();
+  } else if (event.code === 'KeyU') {
+    voiceDown[1] = false;
+    syncVoiceFromKeys();
+  } else if (event.code === 'KeyI') {
+    voiceDown[2] = false;
+    syncVoiceFromKeys();
   }
 }
 
 /**
- * Call each frame to update hoveredId and petting state.
+ * Each frame: sync multi-pointer drags, hovers, and petting sample points.
  */
 export function updateHover(p) {
+  p5Ref = p;
   if (getGameMode() !== 'digital') {
-    hoveredId = null;
-    state.pet.active = false;
-    state.pet.x = null;
-    state.pet.y = null;
+    hoveredIds.clear();
+    state.pet.points = [];
     return;
   }
-  const { x: mx, y: my } = pointer(p);
-  if (!isInsideCanvas(mx, my)) {
-    hoveredId = null;
-    return;
-  }
-  const n = normalize(mx, my);
-  hoveredId = hitTest(state.tools, n.x, n.y);
 
-  // Petting: mouse held down and not dragging a tool
-  if (mouseIsDown && dragId === null) {
-    state.pet.active = true;
-    state.pet.x = n.x;
-    state.pet.y = n.y;
+  syncAllDragPositions();
+
+  hoveredIds.clear();
+  const addHover = (mx, my) => {
+    if (!isInsideCanvas(mx, my)) return;
+    const n = normalize(mx, my);
+    const id = hitTest(state.tools, n.x, n.y);
+    if (id !== null) hoveredIds.add(id);
+  };
+
+  const pm = pointer(p);
+  addHover(pm.x, pm.y);
+  for (let i = 0; i < p.touches.length; i++) {
+    const t = p.touches[i];
+    const pt = getCanvasTouchPoint(p, canvasSize, t.x, t.y);
+    addHover(pt.x, pt.y);
+  }
+
+  state.pet.points = [];
+  if (mouseIsDown && !activeDrags.has(MOUSE_POINTER_ID)) {
+    state.pet.points.push(normalize(pm.x, pm.y));
+  }
+  for (let i = 0; i < p.touches.length; i++) {
+    const t = p.touches[i];
+    if (activeDrags.has(t.id)) continue;
+    const pt = getCanvasTouchPoint(p, canvasSize, t.x, t.y);
+    if (!isInsideCanvas(pt.x, pt.y)) continue;
+    state.pet.points.push(normalize(pt.x, pt.y));
   }
 }

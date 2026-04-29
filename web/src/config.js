@@ -154,6 +154,9 @@ export const TOOL_SIZES = {
   comb: 0.022,
 };
 
+/** Same canvas: up to this many simultaneous drags (multi-touch / co-op). */
+export const MAX_LOCAL_PLAYERS = 3;
+
 export const TOOL_HIT_RADIUS = 0.035;
 /** Degrees per scroll wheel tick or R key — grass, comb (blocks use `TOOL_BLOCK_ROTATE_STEP`). */
 export const TOOL_ROTATE_STEP = 15;
@@ -458,7 +461,7 @@ export const PHYSICAL_MODE = {
 // -- Session --
 export const SESSION = {
   introDuration: 60 * 3,    // frames for intro animation (~3s)
-  outroDuration: 60 * 5,    // frames for win screen (~5s)
+  outroDuration: 60 * 5,    // frames for win (~5s; burst → hold → linger → fade)
   resetPause: 60 * 2,       // frames to pause before auto-reset (~2s)
   autoHerdIdleFrames: 60 * 60,  // ~60s of sheepdog inactivity → auto-herd engages
   sheepdogMoveEpsilon: 0.002,   // normalized distance below which a sheepdog counts as "not moving"

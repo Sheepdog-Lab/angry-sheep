@@ -8,10 +8,12 @@
  */
 export function stripVictoryShepherdBackdrop(img, opts = {}) {
   if (!img || !img.width || !img.height) return;
-  const rgbMax = opts.rgbMax ?? 34;
-  img.loadPixels();
   const w = img.width;
   const h = img.height;
+  /** Avoid OOM / main-thread freeze on accidentally huge decoded bitmaps. */
+  if (w * h > 25_000_000) return;
+  const rgbMax = opts.rgbMax ?? 34;
+  img.loadPixels();
   const pix = img.pixels;
   const n = w * h;
   const seen = new Uint8Array(n);
